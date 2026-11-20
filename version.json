@@ -1,0 +1,10 @@
+{
+  "version": "2.1.0",
+  "tanggal": "2026-11-21",
+  "catatan": [
+    "Pindah ke alamat sendiri (bisa diinstal terpisah dari absensi)",
+    "Pemberitahuan versi baru otomatis",
+    "Pengaman PIN, cek jam tablet, cek versi server",
+    "Lebih cepat & error tercatat di tab Log"
+  ]
+}
