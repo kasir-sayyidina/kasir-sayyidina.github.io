@@ -1,10 +1,7 @@
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "tanggal": "2026-11-21",
   "catatan": [
-    "Pindah ke alamat sendiri (bisa diinstal terpisah dari absensi)",
-    "Pemberitahuan versi baru otomatis",
-    "Pengaman PIN, cek jam tablet, cek versi server",
-    "Lebih cepat & error tercatat di tab Log"
+    "Tombol akun di pojok kanan atas: ganti petugas, masuk sebagai manajer, keluar"
   ]
 }

@@ -215,7 +215,7 @@ td.r,th.r{text-align:right}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '2.1.0';      // versi tampilan — naikkan bersama version.json setiap update
+const APP_VERSION = '2.1.1';      // versi tampilan — naikkan bersama version.json setiap update
 const BACKEND_MINIMAL = '2.1.0';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
@@ -439,7 +439,7 @@ function shell() {
   <main id="view"></main>
   <nav><div class="wrap">${tabs().map(t => `<button data-t="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}">${ico(t[1])}${t[2]}${t[0] === 'habis' ? '<span class="badge" id="nb-habis" style="display:none"></span>' : ''}</button>`).join('')}</div></nav>`;
   $$('nav button').forEach(b => b.onclick = () => { vib(8); go(b.dataset.t); });
-  $('#petugas').onclick = async () => { await pilihPetugas(); $('#petugas').innerHTML = ico('user', 14) + ' ' + esc(S.nama); };
+  $('#petugas').onclick = menuAkun;
   $('#sync').onclick = () => { const n = store.get('q', []).length; toast(n ? n + ' transaksi menunggu dikirim. Akan terkirim otomatis saat online.' : (ONLINE ? 'Semua data sudah tersimpan di server.' : 'Sedang offline.')); flush(); };
   updSync(); updHabisBadge();
 }
@@ -481,7 +481,7 @@ async function doLogin(pin) {
   S.role = d.role; S.warung = d.warung; S.menu = d.menu; S.pegawai = d.pegawai; S.perangkat = d.perangkat;
   S.notaServer = { tgl: d.tanggalServer || today(), n: d.notaTerakhir || 0 };
   store.set('pin', pin);
-  const sah = S.nama && S.nama.split(' & ').every(n => S.pegawai.some(p => p.nama === n));
+  const sah = S.nama && S.nama.split(' & ').every(n => S.pegawai.some(p => p.nama === n && (S.role === 'manajer') === (p.peran === 'Manajer')));
   if (!sah) await pilihPetugas();
   shell(); go(S.tab = 'kasir'); flush();
   S.versiBackend = d.versi || '';
@@ -505,6 +505,17 @@ function pilihPetugas() {
     });
     const pm = m.querySelector('#pm'); if (pm) pm.onclick = done;
   });
+}
+function menuAkun() {
+  const man = S.role === 'manajer';
+  const m = modal(`<h3>${esc(S.nama || '-')}</h3><div class="muted" style="margin:-4px 2px 14px">Masuk sebagai ${man ? 'Manajer' : 'Kasir (pegawai)'}</div>
+    <div class="menu-l">
+     <button class="btn block" data-a="ganti">${ico('swap')}&nbsp;${man ? 'Ganti nama manajer' : 'Ganti pegawai yang jaga'}</button>
+     <button class="btn block" data-a="pindah">${ico('user')}&nbsp;${man ? 'Pindah ke mode kasir (PIN pegawai)' : 'Masuk sebagai manajer'}</button>
+     <button class="btn block red" data-a="keluar">${ico('out')}&nbsp;Keluar</button></div>`);
+  m.querySelector('[data-a="ganti"]').onclick = async () => { m.remove(); await pilihPetugas(); $('#petugas').innerHTML = ico('user', 14) + ' ' + esc(S.nama); };
+  m.querySelector('[data-a="pindah"]').onclick = () => { m.remove(); logout(man ? 'Masukkan PIN pegawai.' : 'Masukkan PIN manajer.'); };
+  m.querySelector('[data-a="keluar"]').onclick = () => { m.remove(); logout(); };
 }
 function logout(msg) { S.pin = null; S.role = null; store.set('pin', null); S.cart = {}; vLogin(typeof msg === 'string' ? msg : ''); }
 
