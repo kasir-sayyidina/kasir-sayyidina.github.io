@@ -221,8 +221,8 @@ td.r,th.r{text-align:right}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '2.3.0';      // versi tampilan — naikkan bersama version.json setiap update
-const BACKEND_MINIMAL = '2.3.0';  // versi Code.gs minimal yang dibutuhkan
+const APP_VERSION = '2.3.1';      // versi tampilan — naikkan bersama version.json setiap update
+const BACKEND_MINIMAL = '2.3.1';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
 const $ = s => document.querySelector(s);
@@ -273,7 +273,7 @@ if (!DEVICE) { DEVICE = 'D-' + Math.random().toString(36).slice(2, 8).toUpperCas
 let S = { pin: store.get('pin'), nama: store.get('nama', ''), role: null, warung: 'Warung Sayyidina', menu: [], pegawai: [], cart: {}, kat: 'Semua', cari: '', tab: 'kasir', habisMode: false, habisN: 0, perangkat: null };
 const isDemo = () => !SCRIPT_URL && !!window.DEMO_BACKEND;
 
-function toast(msg, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 4500 : 2500); }
+function toast(msg, err) { $$('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 4500 : 2500); }
 let loadingN = 0;
 function loading(on) { loadingN = Math.max(0, loadingN + (on ? 1 : -1)); let el = $('#ld'); if (loadingN > 0 && !el) { el = document.createElement('div'); el.id = 'ld'; el.className = 'loading'; el.innerHTML = '<div class="spin"></div>'; document.body.appendChild(el); } if (!loadingN && el) el.remove(); }
 
@@ -454,6 +454,7 @@ function go(t) {
   S.tab = t;
   $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   const cb = $('.cartbar'); if (cb) cb.remove();
+  if (t !== 'kasir') jagaLayar(false);
   window.scrollTo(0, 0);
   ({ kasir: vKasir, habis: vHabis, keluar: vKeluar, tutup: vTutup, catat: vCatat, laporan: vLaporan, bagi: vBagi, lain: vLain })[t]();
 }
@@ -487,7 +488,7 @@ async function doLogin(pin) {
   S.role = d.role; S.warung = d.warung; S.menu = d.menu; S.pegawai = d.pegawai; S.perangkat = d.perangkat;
   S.notaServer = { tgl: d.tanggalServer || today(), n: d.notaTerakhir || 0 };
   store.set('pin', pin);
-  const sah = S.nama && S.nama.split(' & ').every(n => S.pegawai.some(p => p.nama === n && (S.role === 'manajer') === (p.peran === 'Manajer')));
+  const sah = store.get('namaTgl') === today() && S.nama && S.nama.split(' & ').every(n => S.pegawai.some(p => p.nama === n && (S.role === 'manajer') === (p.peran === 'Manajer')));
   if (!sah) await pilihPetugas();
   shell(); go(S.tab = 'kasir'); flush();
   S.versiBackend = d.versi || ''; S.qris = d.qris || ''; S.terlaris = d.terlaris || {}; S.osApp = d.onesignalAppId || '';
@@ -504,7 +505,7 @@ function pilihPetugas() {
     const m = modal(`<h3>${manajer ? 'Masuk sebagai' : 'Siapa yang jaga?'}</h3><div class="muted" style="margin-bottom:12px">${manajer ? 'Pilih nama Anda.' : 'Centang semua pegawai yang bertugas sekarang (boleh lebih dari satu).'}</div>
       <div class="hgrid">${list.map(p => `<div class="hb ${pilih.has(p.nama) ? 'Sedikit' : ''}" data-n="${esc(p.nama)}">${esc(p.nama)}</div>`).join('')}</div>
       ${manajer ? '' : '<button class="btn pri block" id="pm" style="margin-top:16px">Mulai</button>'}`, null, { lock: true });
-    const done = () => { if (!pilih.size) return toast('Pilih minimal satu nama.', true); S.nama = [...pilih].join(' & '); store.set('nama', S.nama); m.remove(); res(); };
+    const done = () => { if (!pilih.size) return toast('Pilih minimal satu nama.', true); S.nama = [...pilih].join(' & '); store.set('nama', S.nama); store.set('namaTgl', today()); m.remove(); res(); };
     m.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
       const n = b.dataset.n;
       if (manajer) { pilih.clear(); pilih.add(n); return done(); }
@@ -530,14 +531,16 @@ function logout(msg) { S.pin = null; S.role = null; store.set('pin', null); S.ca
 function vKasir() {
   const kats = ['Semua', ...new Set(S.menu.map(m => m.kategori))];
   $('#view').innerHTML = `<div class="pos ${S.habisMode ? 'habismode' : ''}"><div>
-   <div class="toolbar"><input id="cari" placeholder="Cari menu…" value="${esc(S.cari)}">
+   <div class="toolbar"><div style="flex:1;position:relative;display:flex"><input id="cari" placeholder="Cari menu…" value="${esc(S.cari)}" style="padding-right:38px">${S.cari ? '<button id="cx" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;font-size:20px;color:var(--muted);cursor:pointer">×</button>' : ''}</div>
     <button class="btn sm" id="urut" title="Urutan menu">${store.get('urut') === 'laris' ? '★ Terlaris' : '☰ Menu'}</button>
     <button class="btn sm ${S.habisMode ? 'red' : ''}" id="hm">${S.habisMode ? 'Selesai' : 'Tandai habis'}</button><button class="btn sm" id="riw">${ico('hist', 16)}</button></div>
    ${S.habisMode ? '<div class="warnbox">Mode tandai habis: ketuk menu untuk menandai <b>habis hari ini</b> atau tersedia lagi. Besok otomatis tersedia.</div>' : ''}
    <div class="chips">${kats.map(k => `<div class="chip ${S.kat === k ? 'on' : ''}" data-k="${esc(k)}">${esc(k)}</div>`).join('')}</div>
    <div class="grid" id="grid"></div></div>
    <aside class="panel" id="panel"></aside></div>`;
-  $('#cari').oninput = e => { S.cari = e.target.value; drawGrid(); };
+  $('#cari').oninput = e => { const ada = !!S.cari; S.cari = e.target.value; if (ada !== !!S.cari) { vKasir(); const c = $('#cari'); c.focus(); c.setSelectionRange(c.value.length, c.value.length); } else drawGrid(); };
+  if ($('#cx')) $('#cx').onclick = () => { S.cari = ''; vKasir(); };
+  jagaLayar(true);
   $$('.chip').forEach(c => c.onclick = () => { S.kat = c.dataset.k; vKasir(); });
   $('#riw').onclick = riwayatKasir;
   $('#hm').onclick = () => { S.habisMode = !S.habisMode; vKasir(); };
@@ -638,8 +641,10 @@ async function riwayatKasir() {
   let d = []; try { d = await api('penjualan.hariIni', { tanggal: today() }); } catch (e) {}
   const q = store.get('q', []).filter(x => x.action === 'penjualan.simpan').map(x => ({ id: x.data.id, nota: x.data.nota, waktu: x.data.waktu.slice(11, 16), kasir: x.data.kasir, metode: x.data.metode, total: x.data.total, rincian: x.data.items.map(i => i.qty + 'x ' + i.nama).join(', '), status: 'ANTRE' }));
   const all = q.concat(d.filter(x => !q.some(y => y.id === x.id)));
-  const tot = all.filter(x => x.status !== 'BATAL').reduce((a, x) => a + x.total, 0);
+  const sah = all.filter(x => x.status !== 'BATAL'), tot = sah.reduce((a, x) => a + x.total, 0);
+  const tn = sah.filter(x => x.metode !== 'QRIS').reduce((a, x) => a + x.total, 0);
   const m = modal(`<div class="between"><h3>Transaksi hari ini</h3><span class="money" style="font-size:22px">${rp(tot)}</span></div>
+   <div class="muted" style="margin:-4px 2px 6px">${sah.length} nota · Tunai ${rp(tn)} · QRIS ${rp(tot - tn)}</div>
    <div class="list">${all.map(x => `<div class="li ${x.status === 'BATAL' ? 'batal' : ''}"><div style="min-width:0"><b>#${esc(x.nota || '-')}</b> · ${x.waktu} · ${esc(x.metode)} ${x.status === 'ANTRE' ? '<span class="badge warn">antre</span>' : ''}<div class="muted">${esc(x.rincian)}${x.status === 'BATAL' ? ' — batal: ' + esc(x.alasan) : ''}</div></div>
    <div style="text-align:right;white-space:nowrap"><span class="money" style="font-size:17px">${rp(x.total)}</span>${x.status === 'OK' ? `<br><button class="btn sm red" data-b="${x.id}" style="margin-top:4px">Batal</button>` : ''}</div></div>`).join('') || '<div class="muted">Belum ada transaksi.</div>'}</div>`);
   m.querySelectorAll('[data-b]').forEach(b => b.onclick = async () => {
@@ -705,7 +710,7 @@ function vKeluar() {
   $$('#fk [data-v]').forEach(c => c.onclick = () => $('#kn').value = c.dataset.v);
   $('#ks').onclick = async () => {
     if (!$('#ki').value.trim() || !num($('#kn').value)) return toast('Isi barang dan nominal.', true);
-    let r; try { r = await api('laci.keluar', { item: $('#ki').value.trim(), jumlah: $('#kj').value.trim(), nominal: num($('#kn').value), kategori: pilih ? 'HPP' : kat, oleh: S.nama }); } catch (e) { return; }
+    let r; try { r = await api('laci.keluar', { id: 'K' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase(), tanggal: today(), waktu: nowStr(), item: $('#ki').value.trim(), jumlah: $('#kj').value.trim(), nominal: num($('#kn').value), kategori: pilih ? 'HPP' : kat, oleh: S.nama }); } catch (e) { return; }
     toast(r.offline ? 'Tersimpan di tablet, terkirim saat online' : 'Tercatat ✓'); $('#fk').style.display = 'none'; muatKeluar();
   };
   muatKeluar();
@@ -1177,6 +1182,22 @@ async function vRiwayatKas() {
   let d; try { d = await api('kas.riwayat', {}); } catch (e) { return; }
   $('#view').innerHTML = `<h2>Riwayat Tutup Kas</h2><div class="sub">60 hari terakhir.</div><div class="card list">${d.map(x => `<div class="li"><div><b>${tglID(x.tanggal)}</b><div class="muted">${esc(x.petugas)} · fisik ${rp(x.fisik)} · diambil ${rp(x.diambil)}${x.catatan ? ' · ' + esc(x.catatan) : ''}</div></div><span class="money" style="font-size:18px;color:${x.selisih < 0 ? 'var(--bad)' : x.selisih > 0 ? 'var(--ok)' : 'inherit'}">${x.selisih > 0 ? '+' : ''}${rp(x.selisih)}</span></div>`).join('') || '<div class="muted">Belum ada.</div>'}</div>${kembali}`;
 }
+
+/* ===================== layar tetap menyala & ganti hari ===================== */
+let WL = null;
+async function jagaLayar(on) {
+  try {
+    if (on && S.role === 'pegawai' && 'wakeLock' in navigator && !WL && document.visibilityState === 'visible') { WL = await navigator.wakeLock.request('screen'); WL.addEventListener('release', () => WL = null); }
+    if (!on && WL) { await WL.release(); WL = null; }
+  } catch (e) { WL = null; }
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !S.role) return;
+  if (S.tab === 'kasir') jagaLayar(true);
+  if (S.role === 'pegawai' && store.get('namaTgl') !== today() && !$('.modal')) {
+    await pilihPetugas(); const pc = $('#petugas'); if (pc) pc.innerHTML = ico('user', 14) + ' ' + esc(S.nama);
+  }
+});
 
 /* ===================== versi & pemeriksaan ===================== */
 const vNum = v => String(v || '0').split('.').map(Number).reduce((a, x) => a * 1000 + (x || 0), 0);

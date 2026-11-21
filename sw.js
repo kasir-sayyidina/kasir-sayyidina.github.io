@@ -1,5 +1,5 @@
 // Service worker Kasir Sayyidina — agar aplikasi tetap terbuka saat offline
-const VERSI = '2.3.0';
+const VERSI = '2.3.1';
 const CACHE = 'kasir-sayyidina-' + VERSI;
 const ASET = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASET)).then(() => self.skipWaiting())); });

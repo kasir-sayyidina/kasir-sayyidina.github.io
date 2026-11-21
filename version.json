@@ -1,9 +1,10 @@
 {
-  "version": "2.3.0",
+  "version": "2.3.1",
   "tanggal": "2026-11-21",
   "catatan": [
-    "Jam pengingat & batas selisih bisa diatur langsung di aplikasi",
-    "Saklar nyala/mati per jenis notifikasi",
-    "Ganti PIN dari aplikasi"
+    "Layar tablet tetap menyala saat kasir dibuka",
+    "Nama petugas ditanyakan ulang setiap hari baru",
+    "Ringkasan tunai/QRIS di riwayat, tombol hapus pencarian",
+    "Perbaikan nomor nota & uang keluar offline"
   ]
 }
