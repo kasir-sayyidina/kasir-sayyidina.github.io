@@ -197,6 +197,7 @@ td.r,th.r{text-align:right}
 .warnbox{background:#FFF8DC;border:1px solid #EBC66A;border-radius:14px;padding:11px 13px;margin-bottom:10px;font-size:13.5px}
 #print{display:none}
 /* v3 */
+.chips.wrap{flex-wrap:wrap;overflow:visible}
 header{flex-wrap:wrap}
 #pita{flex:0 0 calc(100% + 32px);margin:8px -16px -10px;display:none}#pita:not(:empty){display:block}
 .pita{font-size:12px;text-align:center;padding:6px 10px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
@@ -243,8 +244,8 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:#FFFAF0}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '3.0.0';      // versi tampilan — naikkan bersama version.json setiap update
-const BACKEND_MINIMAL = '3.0.0';  // versi Code.gs minimal yang dibutuhkan
+const APP_VERSION = '3.1.0';      // versi tampilan — naikkan bersama version.json setiap update
+const BACKEND_MINIMAL = '3.1.0';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
 const $ = s => document.querySelector(s);
@@ -327,10 +328,20 @@ async function api(action, data, opt) {
   } catch (e) {
     if (isNetErr(e)) { setOnline(false); if (antre) return enqueue(action, data); }
     const m = String(e.message || e);
-    if (!opt.quiet) toast(isNetErr(e) ? 'Tidak ada koneksi internet. Coba lagi sebentar.' : m, true);
+    if (!opt.quiet) toast(isNetErr(e) ? 'Tidak ada koneksi internet. Coba lagi sebentar.' : pendekkan(m), true);
     if (m === 'PIN salah.' || /Perangkat tidak terdaftar/.test(m)) logout(m);
     throw e;
   } finally { if (!opt.silent) loading(false); }
+}
+/** Pesan error teknis (JSON panjang dari server lain) diringkas supaya mudah dipahami. */
+function pendekkan(m) {
+  m = String(m || '');
+  if (/"error"\s*:|\{\s*"/.test(m) || m.length > 220) {
+    if (/503|UNAVAILABLE|high demand|overloaded/i.test(m)) return 'Server AI Google sedang sibuk. Coba lagi 1–2 menit lagi.';
+    if (/429|RESOURCE_EXHAUSTED|quota/i.test(m)) return 'Kuota AI sedang habis. Tunggu sebentar lalu coba lagi.';
+    return m.replace(/\{[\s\S]*$/, '').trim().slice(0, 160) || 'Terjadi kesalahan. Coba lagi.';
+  }
+  return m;
 }
 /* ===================== mode latihan (data hanya di perangkat ini) ===================== */
 const LATIHAN_AKSI = ['penjualan.simpan', 'penjualan.hariIni', 'penjualan.batal', 'penjualan.ubah', 'laci.keluar', 'laci.hariIni', 'laci.batal',
@@ -376,7 +387,7 @@ async function selesaiLatihan() {
 function pita() {
   const el = $('#pita'); if (!el) return;
   el.innerHTML = (S.latihan ? '<div class="pita lat"><span>MODE LATIHAN · transaksi tidak masuk pembukuan</span><button id="plx">Selesai latihan</button></div>' : '')
-    + (S.modeUji ? `<div class="pita uji">MODE UJI COBA · data masih percobaan${S.role === 'manajer' ? ' · atur di Lainnya → Reset Data Uji Coba' : ''}</div>` : '');
+    + (S.modeUji ? '<div class="pita uji">MODE UJI COBA · data masih percobaan</div>' : '');
   const b = $('#plx'); if (b) b.onclick = selesaiLatihan;
 }
 function enqueue(action, data) {
@@ -586,6 +597,7 @@ async function doLogin(pin) {
 function infoKasir(d) {
   if (!d) return;
   if (d.modeUji !== undefined) S.modeUji = !!d.modeUji;
+  if (d.periodeMulai !== undefined) S.periodeMulai = d.periodeMulai || 0;
   if (d.libur !== undefined) S.libur = d.libur || '';
   if (d.pesananN !== undefined) S.pesananN = d.pesananN || 0;
   if (d.itemLain) S.itemLain = d.itemLain;
@@ -1065,6 +1077,92 @@ async function vTutup() {
 
 /* ===================== CATAT (AI) ===================== */
 let CATAT = { grup: [], gambar: null, teks: '' };
+/* ===================== pembaca cepat catatan WA (tanpa AI) ===================== */
+const KATA_KAT = (() => {
+  const d = {
+    'Operasional': ['plastik sampah', 'kantong sampah', 'kresek sampah', 'gas', 'elpiji', 'lpg', 'listrik', 'token', 'pdam', 'air pdam', 'sabun', 'deterjen', 'rinso', 'sunlight', 'mama lemon', 'pel', 'sapu', 'kebersihan', 'tisu', 'tissue', 'parkir', 'bensin', 'pertalite', 'pertamax', 'solar', 'ongkir', 'ongkos', 'ojek', 'gojek', 'grab', 'kuota', 'pulsa', 'wifi', 'internet', 'iuran', 'sampah', 'keamanan', 'perbaikan', 'servis', 'service', 'sewa', 'solasi', 'lakban', 'korek', 'spons', 'sabut', 'kanebo', 'lap', 'baterai', 'lampu', 'obat nyamuk', 'pewangi', 'kamper', 'fotokopi', 'print'],
+    'Stok Kemasan': ['paper box', 'paperbox', 'paper bag', 'paperbag', 'sos', 'box', 'cup', 'gelas plastik', 'tutup cup', 'tutup gelas', 'sedotan', 'plastik', 'kresek', 'mika', 'kertas nasi', 'kertas minyak', 'kertas kemasan', 'kertas', 'karet', 'sendok plastik', 'garpu plastik', 'thinwall', 'styrofoam', 'sterofoam', 'sealer', 'segel', 'klip', 'stiker', 'sumpit'],
+    'Aset': ['kompor', 'blender', 'freezer', 'kulkas', 'panci', 'wajan', 'penggorengan', 'etalase', 'meja', 'kursi', 'rak', 'pisau', 'talenan', 'termos', 'dispenser', 'timbangan', 'rice cooker', 'magic com', 'magicom', 'gerobak', 'spatula', 'saringan', 'baskom', 'ember', 'cobek', 'ulekan', 'juicer', 'mixer', 'nampan', 'toples', 'teko'],
+    'Bayar Hutang': ['bayar hutang', 'bayar utang', 'cicil hutang', 'kembalikan pinjaman', 'kembali ndalem', 'bayar ndalem'],
+    'Prive': ['prive', 'pribadi'],
+    'HPP': ['ayam', 'usus', 'kulit', 'jamur', 'beras', 'nasi', 'sayur', 'kol', 'kubis', 'timun', 'mentimun', 'selada', 'cabai', 'cabe', 'lombok', 'rawit', 'bawang', 'bumbu', 'tepung', 'terigu', 'maizena', 'minyak', 'gula', 'susu', 'skm', 'kental manis', 'krimer', 'buah', 'jeruk', 'mangga', 'nanas', 'nanas', 'melon', 'semangka', 'alpukat', 'alpokat', 'apokat', 'naga', 'jambu', 'lemon', 'tomat', 'wortel', 'tape', 'teh', 'es batu', 'es kristal', 'galon', 'air minum', 'aqua', 'le minerale', 'garam', 'kecap', 'saos', 'saus', 'sambal', 'mentega', 'margarin', 'telur', 'kopi', 'sirup', 'terasi', 'merica', 'lada', 'penyedap', 'masako', 'royco', 'micin', 'msg', 'kemangi', 'jahe', 'sereh', 'serai', 'daun', 'tahu', 'tempe', 'kerupuk', 'krupuk', 'keju', 'coklat', 'cokelat', 'meses', 'madu', 'santan', 'kelapa', 'pisang', 'apel', 'anggur', 'strawberry', 'stroberi', 'sirsak', 'markisa', 'belimbing', 'pepaya', 'kiwi', 'nutrijel', 'agar', 'jelly', 'boba', 'es', 'air']
+  };
+  const out = []; Object.keys(d).forEach(k => d[k].forEach(w => out.push([w, k])));
+  return out.sort((a, b) => b[0].length - a[0].length);           // frasa terpanjang dicocokkan lebih dulu
+})();
+const BULAN_ID = { jan: 1, januari: 1, feb: 2, februari: 2, mar: 3, maret: 3, apr: 4, april: 4, mei: 5, jun: 6, juni: 6, jul: 7, juli: 7, agu: 8, agt: 8, agus: 8, agustus: 8, sep: 9, sept: 9, september: 9, okt: 10, oktober: 10, nov: 11, nop: 11, november: 11, nopember: 11, des: 12, desember: 12 };
+function angkaRp(s, unit) {
+  let t = String(s).trim().replace(/^rp\.?\s*/i, '');
+  const u = String(unit || '').toLowerCase();
+  if (/^(jt|juta)$/.test(u)) return Math.round(parseFloat(t.replace(/\./g, '').replace(',', '.')) * 1e6);
+  if (/^(rb|ribu|k)$/.test(u)) return Math.round(parseFloat(t.replace(/\./g, '').replace(',', '.')) * 1e3);
+  if (/^\d{1,3}([.,]\d{3})+$/.test(t)) return Number(t.replace(/[.,]/g, ''));
+  if (/^\d+,\d{1,2}$/.test(t)) return Math.round(parseFloat(t.replace(',', '.')));
+  return Number(t.replace(/[^\d]/g, '')) || 0;
+}
+function tanggalDari(baris, acuan) {
+  const b = baris.toLowerCase();
+  let m = b.match(/(\d{1,2})\s+([a-z]{3,9})\.?\s*(\d{4})?/);
+  if (m && BULAN_ID[m[2]]) { const y = m[3] || acuan.slice(0, 4); return y + '-' + pad(BULAN_ID[m[2]]) + '-' + pad(m[1]); }
+  m = b.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/);
+  if (m && +m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31 && /senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad|tgl|tanggal|^\s*\*?\s*\d{1,2}[\/\-.]\d{1,2}([\/\-.]\d{2,4})?\s*\*?\s*$/.test(b)) {
+    const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : acuan.slice(0, 4); return y + '-' + pad(m[2]) + '-' + pad(m[1]);
+  }
+  return null;
+}
+function kategoriDari(nama) {
+  const n = ' ' + nama.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ') + ' ';
+  const hit = KATA_KAT.find(([w]) => n.indexOf(' ' + w + ' ') >= 0 || (w.length >= 5 && n.indexOf(w) >= 0));
+  return hit ? hit[1] : null;
+}
+/** Baca catatan WA berformat "- Barang 12.000" + "*Total ...*". Hasil: { kelompok, lengkap } — lengkap = semua baris yakin. */
+function bacaCepat(teks) {
+  const grup = []; let g = null, tglAkhir = today(), lengkap = true, baris = 0;
+  const baru = () => { g = { tanggal: tglAkhir, sumber_dana: 'Kas Warung', total_tertulis: null, items: [] }; grup.push(g); };
+  String(teks || '').split(/\r?\n/).forEach(raw => {
+    const l = raw.replace(/[*_~`]/g, '').trim();
+    if (!l) return;
+    const tgl = tanggalDari(l, today());
+    if (tgl && !/\d[\d.,]*\s*(rb|ribu|k|jt)?\s*$/i.test(l.replace(/\d{4}\s*$/, '').replace(/\d{1,2}[\/\-.]\d{1,2}([\/\-.]\d{2,4})?\s*$/, ''))) {
+      tglAkhir = tgl; if (!g || g.items.length || g.total_tertulis !== null) baru(); else g.tanggal = tgl;
+      if (/ndalem|dalem/i.test(l)) g.sumber_dana = 'Pinjam Ndalem';
+      return;
+    }
+    const tot = l.match(/^(?:grand\s*)?total\b[^\d]*([\d.,]+)\s*(rb|ribu|k|jt|juta)?/i);
+    if (tot) {
+      if (!g) baru();
+      let v = angkaRp(tot[1], tot[2]); const sum = g.items.reduce((a, i) => a + i.nominal, 0);
+      if (v < 1000 && sum >= 1000 && Math.abs(v * 1000 - sum) <= sum * .5) v *= 1000;
+      g.total_tertulis = v; if (/ndalem|dalem/i.test(l)) g.sumber_dana = 'Pinjam Ndalem';
+      g = null; return;
+    }
+    const m = l.match(/^(?:[-•·▪>]|\d+[.)])?\s*(.+?)\s*[:=]?\s*(?:rp\.?\s*)?(\d[\d.,]*)\s*(rb|ribu|k|jt|juta)?\s*(?:\((?:pinjam\s*)?n?dalem\))?\s*$/i);
+    if (!m) { if (/ndalem|dalem/i.test(l) && g) g.sumber_dana = 'Pinjam Ndalem'; else if (/[a-z]/i.test(l) && /\d/.test(l)) lengkap = false; return; }
+    if (!g) baru();
+    let nama = m[1].replace(/[:=\-–]+\s*$/, '').trim(), nominal = angkaRp(m[2], m[3]), yakin = true;
+    if (!m[3] && nominal > 0 && nominal < 1000) { nominal *= 1000; yakin = false; }    // "Ayam 152" → kemungkinan ribuan
+    const jm = nama.match(/(\d+[.,]?\d*\s*(?:kg|kilo|gr|gram|g|ons|ltr|liter|l|ml|pcs|pc|pak|pack|bks|bungkus|tabung|ikat|biji|buah|butir|sak|karung|dus|box|botol|btl|galon|bal|lusin|rim|roll|rol|renteng|sachet|papan|kotak|potong|ptg|ekor|kantong|kaleng|pouch|jerigen|toples|blok|lembar|lbr)\b(?:\s*isi\s*\d+)?)/i);
+    const jumlah = jm ? jm[1] : '';
+    if (jm) nama = nama.replace(jm[1], '').replace(/\s{2,}/g, ' ').replace(/[,(]\s*$/, '').trim();
+    if (/ndalem|dalem/i.test(nama)) { g.sumber_dana = 'Pinjam Ndalem'; nama = nama.replace(/\(?\s*(pinjam\s*)?n?dalem\s*\)?/i, '').trim(); }
+    let kategori = kategoriDari(nama + ' ' + jumlah);
+    if (!kategori) { kategori = 'Lain-lain'; yakin = false; }
+    const it = { item: nama.charAt(0).toUpperCase() + nama.slice(1), jumlah, nominal, kategori, jenis_kemasan: null, qty_kemasan: null, yakin };
+    if (kategori === 'Stok Kemasan') {
+      const low = (nama + ' ' + jumlah).toLowerCase();
+      it.jenis_kemasan = (S.kemasan || []).find(k => low.includes(k.toLowerCase())) || (S.kemasan || []).find(k => k.toLowerCase().split(/\s+/).some(w => w.length >= 3 && low.includes(w))) || null;
+      const q = low.match(/(\d+)\s*(?:pak|pack|bal|dus|ikat|slop)\s*isi\s*(\d+)/) || low.match(/isi\s*(\d+)/);
+      it.qty_kemasan = q ? (q[2] ? +q[1] * +q[2] : +q[1]) : (low.match(/(\d+)\s*(pcs|pc|biji|lembar|lbr)/) || [])[1] * 1 || null;
+    }
+    if (!nominal) { yakin = false; it.yakin = false; }
+    if (!yakin) lengkap = false;
+    g.items.push(it); baris++;
+  });
+  const kelompok = grup.filter(x => x.items.length);
+  kelompok.forEach(x => { if (x.total_tertulis !== null && x.total_tertulis !== x.items.reduce((a, i) => a + i.nominal, 0)) lengkap = false; });
+  return { kelompok, lengkap: lengkap && baris > 0 };
+}
+
 function vCatat() {
   $('#view').innerHTML = `<h2>Catat Belanja</h2><div class="sub">Tempel catatan dari grup WA atau foto nota — AI yang memilahkan.</div>
    <div class="card gold"><textarea id="ct" rows="7" placeholder="Selasa, 17 November 2026&#10;- Ayam 152.000&#10;- Usus 22.000&#10;*Total 174 (pinjam ndalem)*">${esc(CATAT.teks)}</textarea>
@@ -1073,13 +1171,30 @@ function vCatat() {
    <div id="hasil"></div>
    <div class="row"><button class="btn" id="cm">✍️ Input manual</button><button class="btn" id="crw">${ico('buku', 18)} Buku Belanja</button></div>`;
   $('#ct').oninput = e => CATAT.teks = e.target.value;
-  $('#cf').onchange = async e => { const f = e.target.files[0]; if (!f) return; CATAT.gambar = await compress(f, 1400, 0.75); vCatat(); };
+  $('#cf').onchange = async e => { const f = e.target.files[0]; if (!f) return; CATAT.gambar = await compress(f, 1280, 0.72); vCatat(); };
   if ($('#chps')) $('#chps').onclick = e => { e.preventDefault(); CATAT.gambar = null; vCatat(); };
-  $('#cp').onclick = async () => {
-    let d; try { d = await api('ai.parse', { teks: $('#ct').value, gambar: CATAT.gambar }); } catch (e) { return; }
+  const pakai = (d, pesan) => {
     CATAT.grup = (d.kelompok || []).map(g => ({ tanggal: g.tanggal || today(), sumber_dana: DANA.includes(g.sumber_dana) ? g.sumber_dana : 'Kas Warung', total_tertulis: g.total_tertulis, items: (g.items || []).map(i => ({ ...i })) }));
-    if (!CATAT.grup.length) toast('AI tidak menemukan item belanja.', true);
+    if (!CATAT.grup.length) toast('Tidak ditemukan item belanja.', true); else if (pesan) toast(pesan);
     drawHasil();
+    const h = $('#hasil'); if (h && CATAT.grup.length) h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  $('#cp').onclick = async () => {
+    const teks = $('#ct').value;
+    if (!teks.trim() && !CATAT.gambar) return toast('Tempel catatan atau pilih foto nota dulu.', true);
+    // 1) catatan WA yang rapi dibaca langsung di HP — tanpa menunggu AI
+    const cepat = CATAT.gambar ? null : bacaCepat(teks);
+    if (cepat && cepat.lengkap) return pakai(cepat, '⚡ Terbaca langsung · ' + cepat.kelompok.reduce((a, g) => a + g.items.length, 0) + ' baris');
+    // 2) foto nota / catatan yang kurang jelas → AI (dengan hitungan detik supaya jelas sedang bekerja)
+    const btn = $('#cp'), awal = Date.now(), label = btn.innerHTML; btn.disabled = true;
+    const tik = setInterval(() => { btn.innerHTML = `${ico('catat', 18)} AI membaca… ${Math.round((Date.now() - awal) / 1000)} dtk`; }, 250);
+    let d, gagal = null;
+    try { d = await api('ai.parse', { teks, gambar: CATAT.gambar }, { silent: true, quiet: true }); } catch (e) { gagal = e; }
+    clearInterval(tik); btn.disabled = false; btn.innerHTML = label;
+    if (d) return pakai(d);
+    // 3) AI sibuk/gagal → pakai hasil baca cepat bila ada (baris ragu ditandai kuning)
+    if (cepat && cepat.kelompok.length) return pakai(cepat, 'AI sedang sibuk — catatan dibaca otomatis. Periksa baris yang ditandai kuning.');
+    toast(pendekkan(gagal && gagal.message) || 'AI gagal membaca. Coba lagi sebentar lagi.', true);
   };
   $('#cm').onclick = () => { CATAT.grup.push({ tanggal: today(), sumber_dana: 'Kas Warung', total_tertulis: null, items: [{ item: '', jumlah: '', nominal: 0, kategori: 'HPP', yakin: true }] }); drawHasil(); };
   $('#crw').onclick = () => { S.tab = 'lain'; $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === 'lain')); vBuku(); };
@@ -1134,15 +1249,48 @@ function rentang(p) {
   if (p === '7') return [addDays(t, -6), t];
   if (p === 'bulan') return [ymd(new Date(d.getFullYear(), d.getMonth(), 1)), t];
   if (p === 'lalu') return [ymd(new Date(d.getFullYear(), d.getMonth() - 1, 1)), ymd(new Date(d.getFullYear(), d.getMonth(), 0))];
+  if (p === 'periode' || p === 'periodeLalu') {
+    const n = S.periodeMulai || 1, y = d.getFullYear(), mo = d.getMonth();
+    const awal = d.getDate() >= n ? new Date(y, mo, n) : new Date(y, mo - 1, n);
+    if (p === 'periode') return [ymd(awal), t];
+    return [ymd(new Date(awal.getFullYear(), awal.getMonth() - 1, n)), addDays(ymd(awal), -1)];
+  }
+  return [t, t];
+}
+const singkatTgl = x => tglID(x).replace(/^[A-Za-z]+, /, '').replace(/ \d{4}$/, '');
+/** Pilihan periode yang sama untuk Laporan & Buku Belanja: preset, periode gajian, atau tanggal bebas. */
+function pilihPeriode(R, ulang) {
+  const pr = S.periodeMulai > 1, opsi = [['hari', 'Hari ini'], ['kemarin', 'Kemarin'], ['7', '7 hari'],
+    ...(pr ? [['periode', 'Periode ini'], ['periodeLalu', 'Periode lalu']] : []), ['bulan', 'Bulan ini'], ['lalu', 'Bulan lalu'], ['pilih', '📅 Tanggal bebas']];
+  const html = `<div class="chips wrap">${opsi.map(x => `<div class="chip ${R.p === x[0] ? 'on' : ''}" data-pp="${x[0]}">${x[1]}</div>`).join('')}</div>
+   ${R.p === 'pilih' ? `<div class="card" style="padding:12px 14px"><div class="row"><div><label style="margin-top:0">Dari tanggal</label><input type="date" id="ppa" value="${R.r[0]}" max="${today()}"></div><div><label style="margin-top:0">Sampai tanggal</label><input type="date" id="ppb" value="${R.r[1]}" max="${today()}"></div></div>
+     <button class="btn dark block" id="ppok" style="margin-top:10px">Tampilkan</button></div>` : ''}
+   <div class="muted" style="margin:-2px 2px 10px">${tglID(R.r[0])}${R.r[0] === R.r[1] ? '' : ' – ' + tglID(R.r[1])} · <a href="#" id="ppset" style="color:var(--m)">${pr ? 'Periode gajian mulai tgl ' + S.periodeMulai : 'Atur periode gajian'}</a></div>`;
+  const pasang = () => {
+    $$('[data-pp]').forEach(c => c.onclick = () => { R.p = c.dataset.pp; if (R.p !== 'pilih') R.r = rentang(R.p); ulang(); });
+    if ($('#ppok')) $('#ppok').onclick = () => { const a = $('#ppa').value, b = $('#ppb').value; if (!a || !b) return toast('Isi kedua tanggal.', true); R.r = a <= b ? [a, b] : [b, a]; ulang(); };
+    $('#ppset').onclick = e => { e.preventDefault(); aturPeriode(ulang); };
+  };
+  return { html, pasang };
+}
+function aturPeriode(after) {
+  const m = modal(`<h3>Periode gajian</h3><div class="muted" style="margin:-4px 2px 10px">Kalau perhitungan dan gajian tidak dari tanggal 1, isi tanggal mulainya. Contoh: isi <b>25</b> berarti periode 25 Oktober – 24 November. Pilihan "Periode ini" dan "Periode lalu" muncul di Laporan, Buku Belanja, dan Bagi Hasil.</div>
+    <label>Periode mulai setiap tanggal</label><select id="pmn"><option value="1">1 (per bulan kalender)</option>${Array.from({ length: 27 }, (_, i) => i + 2).map(n => `<option value="${n}" ${S.periodeMulai === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <button class="btn dark block" id="pms" style="margin-top:14px">Simpan</button>`);
+  m.querySelector('#pms').onclick = async () => {
+    const n = +m.querySelector('#pmn').value;
+    try { await api('pengaturan.simpan', { periodeMulai: n }); } catch (e) { return; }
+    S.periodeMulai = n > 1 ? n : 0; m.remove(); toast('Periode gajian tersimpan ✓');
+    if (S.lap) { S.lap.p = S.periodeMulai ? 'periode' : 'bulan'; S.lap.r = rentang(S.lap.p); }
+    if (after) after();
+  };
 }
 async function vLaporan() {
-  S.lap = S.lap || { p: 'bulan', r: rentang('bulan') };
+  S.lap = S.lap || { p: S.periodeMulai ? 'periode' : 'bulan', r: rentang(S.periodeMulai ? 'periode' : 'bulan') };
+  const PP = pilihPeriode(S.lap, vLaporan);
   $('#view').innerHTML = `<h2>Laporan</h2><div class="sub" id="lsub"></div><div id="today"></div>
-   <div class="chips">${[['hari','Hari ini'],['kemarin','Kemarin'],['7','7 hari'],['bulan','Bulan ini'],['lalu','Bulan lalu'],['pilih','Pilih tanggal']].map(x => `<div class="chip ${S.lap.p === x[0] ? 'on' : ''}" data-p="${x[0]}">${x[1]}</div>`).join('')}</div>
-   ${S.lap.p === 'pilih' ? `<div class="row" style="margin-bottom:10px"><input type="date" id="la" value="${S.lap.r[0]}"><input type="date" id="lb" value="${S.lap.r[1]}"></div>` : ''}
-   <div id="lp"><div class="muted">Memuat…</div></div>`;
-  $$('[data-p]').forEach(c => c.onclick = () => { S.lap.p = c.dataset.p; if (c.dataset.p !== 'pilih') S.lap.r = rentang(c.dataset.p); vLaporan(); });
-  if ($('#la')) { const f = () => { S.lap.r = [$('#la').value, $('#lb').value]; vLaporan(); }; $('#la').onchange = f; $('#lb').onchange = f; }
+   ${PP.html}<div id="lp"><div class="muted">Memuat…</div></div>`;
+  PP.pasang();
   muatHariIni();
   let d, h; try { [d, h] = await Promise.all([api('laporan', { mulai: S.lap.r[0], selesai: S.lap.r[1] }), api('habis.data', {}, { silent: true, quiet: true }).catch(() => null)]); } catch (e) { return; }
   $('#lsub').textContent = tglID(d.mulai) + ' – ' + tglID(d.selesai);
@@ -1453,15 +1601,21 @@ async function vArsip() {
 /* ===================== BAGI HASIL ===================== */
 async function vBagi() {
   let base; try { base = await api('bagihasil.data', {}); } catch (e) { return; }
-  const mulai0 = S.bh ? S.bh.mulai : (base.periodeTerakhir ? addDays(base.periodeTerakhir, 1) : rentang('bulan')[0]);
+  const mulai0 = S.bh ? S.bh.mulai : (base.periodeTerakhir ? addDays(base.periodeTerakhir, 1) : rentang(S.periodeMulai ? 'periode' : 'bulan')[0]);
   const selesai0 = S.bh ? S.bh.selesai : today();
   $('#view').innerHTML = `<h2>Bagi Hasil</h2><div class="sub">Hitung bagian pegawai, manajer, dan kas cadangan.</div>
-   <div class="card gold"><div class="row"><div><label style="margin-top:0">Mulai</label><input type="date" id="ba" value="${mulai0}"></div><div><label style="margin-top:0">Selesai (tgl gajian)</label><input type="date" id="bb" value="${selesai0}"></div></div>
+   <div class="card gold"><div class="chips wrap" style="margin-bottom:4px">${base.periodeTerakhir ? '<div class="chip" data-bq="lanjut">Sejak periode terakhir</div>' : ''}${S.periodeMulai ? '<div class="chip" data-bq="periodeLalu">Periode lalu</div><div class="chip" data-bq="periode">Periode ini</div>' : ''}<div class="chip" data-bq="lalu">Bulan lalu</div><div class="chip" data-bq="bulan">Bulan ini</div><div class="chip" data-bq="atur">⚙ Periode gajian</div></div>
+   <div class="row"><div><label style="margin-top:0">Mulai</label><input type="date" id="ba" value="${mulai0}"></div><div><label style="margin-top:0">Selesai (tgl gajian)</label><input type="date" id="bb" value="${selesai0}"></div></div>
    ${base.periodeTerakhir ? `<div class="muted" style="margin-top:8px">Periode terakhir berakhir ${tglID(base.periodeTerakhir)}.</div>` : ''}
    <div class="between" style="margin-top:12px"><span style="font-size:14px;font-weight:600">Jam kerja otomatis dari absensi</span><label class="switch" style="margin:0"><input type="checkbox" id="babs" ${base.jamDariAbsensi ? 'checked' : ''}><span></span></label></div>
    <button class="btn dark block" id="bm" style="margin-top:12px">Hitung periode ini</button></div>
    <div id="bh"></div><h3>Riwayat periode</h3><div id="brw" class="card list"><div class="muted">Memuat…</div></div>`;
   $('#bm').onclick = () => muatBagi($('#ba').value, $('#bb').value);
+  $$('[data-bq]').forEach(c => c.onclick = () => {
+    if (c.dataset.bq === 'atur') return aturPeriode(() => { S.bh = null; vBagi(); });
+    const r = c.dataset.bq === 'lanjut' ? [addDays(base.periodeTerakhir, 1), today()] : rentang(c.dataset.bq);
+    $('#ba').value = r[0]; $('#bb').value = r[1]; $$('[data-bq]').forEach(x => x.classList.toggle('on', x === c));
+  });
   $('#babs').onchange = async e => { try { await api('pengaturan.simpan', { jamDariAbsensi: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; return; } toast(e.target.checked ? 'Jam diambil dari absensi' : 'Jam diisi manual'); if (S.bh) { S.bh.inp = null; muatBagi(S.bh.mulai, S.bh.selesai); } };
   riwayatBagi();
   if (S.bh) muatBagi(S.bh.mulai, S.bh.selesai);
@@ -1705,18 +1859,17 @@ async function vReset() {
 }
 /* ===================== BUKU BELANJA ===================== */
 async function vBuku() {
-  S.bk = S.bk || { p: 'bulan', r: rentang('bulan'), kat: 'Semua', dana: 'Semua', q: '', batal: true };
-  const B = S.bk;
+  S.lap = S.lap || { p: S.periodeMulai ? 'periode' : 'bulan', r: rentang(S.periodeMulai ? 'periode' : 'bulan') };
+  S.bk = S.bk || { kat: 'Semua', dana: 'Semua', q: '' };
+  const B = S.bk, R = S.lap, PP = pilihPeriode(R, vBuku); B.r = R.r;
   $('#view').innerHTML = `<h2>Buku Belanja</h2><div class="sub" id="bksub">Semua catatan belanja & pengeluaran — sama seperti tab Transaksi di Google Sheet.</div>
-   <div class="chips">${[['hari','Hari ini'],['kemarin','Kemarin'],['7','7 hari'],['bulan','Bulan ini'],['lalu','Bulan lalu'],['pilih','Pilih tanggal']].map(x => `<div class="chip ${B.p === x[0] ? 'on' : ''}" data-p="${x[0]}">${x[1]}</div>`).join('')}</div>
-   ${B.p === 'pilih' ? `<div class="row" style="margin-bottom:10px"><input type="date" id="ba" value="${B.r[0]}"><input type="date" id="bb" value="${B.r[1]}"></div>` : ''}
+   ${PP.html}
    <div class="row" style="margin-bottom:10px;flex-wrap:wrap"><select id="bkat" style="flex:1 1 140px"><option>Semua</option>${KATEGORI.map(k => `<option ${B.kat === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
     <select id="bdana" style="flex:1 1 140px"><option>Semua</option>${['Kas Warung', 'Pinjam Ndalem', 'Kas Laci'].map(k => `<option ${B.dana === k ? 'selected' : ''} value="${k}">${k === 'Kas Laci' ? 'Uang laci (pegawai)' : k}</option>`).join('')}</select>
     <input id="bq" placeholder="Cari barang, mis. ayam" value="${esc(B.q)}" style="flex:2 1 200px"></div>
    <div id="bkl"><div class="muted">Memuat…</div></div>
    <div class="row" style="margin-top:12px"><button class="btn" id="bxls">${ico('xls', 18)} Unduh Excel</button><button class="btn dark" id="bcat">${ico('catat', 18)} Catat belanja</button></div>${kembali}`;
-  $$('[data-p]').forEach(c => c.onclick = () => { B.p = c.dataset.p; if (B.p !== 'pilih') B.r = rentang(B.p); vBuku(); });
-  if ($('#ba')) { const f = () => { B.r = [$('#ba').value, $('#bb').value]; vBuku(); }; $('#ba').onchange = f; $('#bb').onchange = f; }
+  PP.pasang();
   $('#bcat').onclick = () => go('catat');
   let data; try { data = await api('transaksi.list', { mulai: B.r[0], selesai: B.r[1] }, { silent: true }); } catch (e) { $('#bkl').innerHTML = '<div class="warnbox">Gagal memuat.</div>'; return; }
   const saring = () => { const q = B.q.trim().toLowerCase(); return data.filter(x => (B.kat === 'Semua' || x.kategori === B.kat) && (B.dana === 'Semua' || x.dana === B.dana) && (!q || (x.item + ' ' + x.jumlah + ' ' + x.catatan).toLowerCase().includes(q))); };
@@ -1728,7 +1881,7 @@ async function vBuku() {
     const totH = arr => arr.filter(x => x.status !== 'BATAL').reduce((a, x) => a + x.nominal, 0);
     const dana = x => x.dana === 'Kas Laci' ? 'Uang laci' : x.dana;
     const kem = x => x.kemasan ? esc(x.kemasan) + (x.qtyKemasan ? ' · ' + x.qtyKemasan + ' pcs' : '') : '';
-    $('#bksub').textContent = tglID(B.r[0]) + ' – ' + tglID(B.r[1]);
+    $('#bksub').textContent = 'Semua catatan belanja & pengeluaran, sama seperti tab Transaksi di Google Sheet.';
     $('#bkl').innerHTML = `<div class="stat"><div class="tile hero"><div class="k">Total belanja & pengeluaran</div><div class="v">${rp(tot)}</div><div style="font-size:12px;opacity:.8">${ok.length} catatan · ${tgl.length} hari${list.length - ok.length ? ' · ' + (list.length - ok.length) + ' dibatalkan' : ''}</div></div>
       ${KATEGORI.filter(k => perKat[k]).map(k => `<div class="tile"><div class="k">${k}</div><div class="v" style="font-size:20px">${rp(perKat[k])}</div></div>`).join('')}</div>
      ${!list.length ? '<div class="card muted" style="margin-top:10px">Tidak ada catatan untuk pilihan ini.</div>' : lebar

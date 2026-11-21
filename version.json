@@ -1,8 +1,8 @@
 {
-  "version": "3.0.0",
-  "tanggal": "2026-11-21",
+  "version": "3.1.0",
+  "tanggal": "2026-11-22",
   "catatan": [
-    "Kasir: item lain, diskon, ubah transaksi, pesanan & katering, mode latihan",
-    "Manajer: Buku Belanja, biaya rutin, hari libur, grafik tren, laba per menu, unduh Excel, pulihkan cadangan"
+    "Catat AI lebih cepat: catatan WA rapi langsung terbaca, AI otomatis pindah model bila server sibuk",
+    "Periode tanggal bebas & periode gajian (mis. tgl 25–24) di Laporan, Buku Belanja, Bagi Hasil"
   ]
 }
