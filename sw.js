@@ -1,12 +1,12 @@
 // Service worker Kasir Sayyidina — agar aplikasi tetap terbuka saat offline
-const VERSI = '2.1.1';
+const VERSI = '2.2.0';
 const CACHE = 'kasir-sayyidina-' + VERSI;
 const ASET = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASET)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
   const req = e.request;
-  if (req.method !== 'GET' || req.url.includes('script.google.com') || req.url.includes('version.json')) return;
+  if (req.method !== 'GET' || req.url.includes('script.google.com') || req.url.includes('version.json') || req.url.includes('onesignal')) return;
   const url = new URL(req.url);
   if (req.mode === 'navigate' || url.pathname.endsWith('index.html')) {
     // halaman: ambil versi terbaru, kalau offline pakai simpanan

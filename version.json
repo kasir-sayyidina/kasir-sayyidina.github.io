@@ -1,7 +1,10 @@
 {
-  "version": "2.1.1",
+  "version": "2.2.0",
   "tanggal": "2026-11-21",
   "catatan": [
-    "Tombol akun di pojok kanan atas: ganti petugas, masuk sebagai manajer, keluar"
+    "Menu, harga & status habis di tablet ikut berubah otomatis",
+    "Gambar QRIS di kasir, urutan menu terlaris",
+    "Ringkasan hari ini & perbandingan periode di Laporan",
+    "Notifikasi HP manajer, arsip tahunan"
   ]
 }
