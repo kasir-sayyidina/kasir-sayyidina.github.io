@@ -244,8 +244,8 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:#FFFAF0}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '3.1.0';      // versi tampilan — naikkan bersama version.json setiap update
-const BACKEND_MINIMAL = '3.1.0';  // versi Code.gs minimal yang dibutuhkan
+const APP_VERSION = '3.1.1';      // versi tampilan — naikkan bersama version.json setiap update
+const BACKEND_MINIMAL = '3.1.1';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
 const $ = s => document.querySelector(s);
@@ -408,7 +408,7 @@ async function flush() {
         q.shift(); store.set('q', q); setOnline(true);
       } catch (e) { setOnline(false); break; }
     }
-  } finally { flushing = false; updSync(); }
+  } finally { flushing = false; updSync(); kirimHabis(); }
 }
 let ONLINE = true;
 function setOnline(v) { if (ONLINE !== v) { ONLINE = v; updSync(); if (v) flush(); } }
@@ -965,38 +965,92 @@ function bayarPesanan(p, after) {
 }
 
 /* ===================== DAFTAR HABIS ===================== */
+/* Daftar habis: ketukan langsung tampil di layar, dikirim ke server bergelombang di belakang layar. */
+const HQ = { pending: store.get('habisQ', []), timer: null, kirim: false, ok: 0 };
+function habisLokal(h, barang, status) {
+  const k = barang.toLowerCase(), i = h.aktif.findIndex(a => a.barang.toLowerCase() === k);
+  if (status === 'hapus') { if (i >= 0) h.aktif.splice(i, 1); }
+  else if (i >= 0) h.aktif[i].status = status;
+  else h.aktif.push({ id: 'tmp' + Date.now() + Math.random(), barang, status, oleh: S.nama, waktu: nowStr().slice(0, 16) });
+}
+function antreHabis(barang, status) {
+  HQ.pending = HQ.pending.filter(x => x.barang.toLowerCase() !== barang.toLowerCase());
+  HQ.pending.push({ barang, status }); store.set('habisQ', HQ.pending);
+  clearTimeout(HQ.timer); HQ.timer = setTimeout(kirimHabis, 800); updHabisInfo();
+}
+async function kirimHabis() {
+  clearTimeout(HQ.timer); HQ.timer = null;
+  if (HQ.kirim || !HQ.pending.length || !S.role || S.latihan) return;
+  HQ.kirim = true; updHabisInfo();
+  const batch = HQ.pending.slice();
+  try {
+    const h = await api('habis.lapor', { list: batch, oleh: S.nama }, { silent: true, quiet: true });
+    HQ.pending = HQ.pending.filter(x => !batch.includes(x)); store.set('habisQ', HQ.pending);
+    HQ.pending.forEach(x => habisLokal(h, x.barang, x.status));          // ketukan baru selama mengirim tetap dipertahankan
+    S.habisData = h; store.set('habisCache', h); S.habisN = h.aktif.length; updHabisBadge(); HQ.ok = Date.now();
+    if (S.habisDraw) S.habisDraw(h);
+  } catch (e) { HQ.timer = setTimeout(kirimHabis, 10000); }               // offline / gagal → dicoba lagi otomatis
+  finally { HQ.kirim = false; updHabisInfo(); if (HQ.pending.length && !HQ.timer) HQ.timer = setTimeout(kirimHabis, 300); }
+}
+function updHabisInfo() {
+  const el = $('#hinfo'); if (!el) return;
+  const n = HQ.pending.length;
+  el.innerHTML = n ? (HQ.kirim ? `<span class="badge warn">Menyimpan ${n} perubahan…</span>` : HQ.timer && !navigator.onLine ? `<span class="badge bad">Offline · ${n} perubahan dikirim otomatis nanti</span>` : `<span class="badge warn">${n} perubahan akan disimpan…</span>`)
+    : HQ.ok ? '<span class="badge ok">Tersimpan ✓</span>' : '';
+}
+window.addEventListener('online', () => kirimHabis());
 async function vHabis() {
   const man = S.role === 'manajer';
-  $('#view').innerHTML = `<h2>Daftar Habis</h2><div class="sub">${man ? 'Bahan yang dilaporkan habis — jadikan daftar belanja.' : 'Ketuk barang yang habis. Ketuk lagi untuk "tinggal sedikit", sekali lagi untuk menghapus.'}</div><div id="hv"><div class="muted">Memuat…</div></div>`;
-  let h; try { h = await api('habis.data', {}, { silent: true }); } catch (e) { return; }
-  S.habisN = h.aktif.length; updHabisBadge();
+  $('#view').innerHTML = `<div class="between"><h2>Daftar Habis</h2><span id="hinfo"></span></div><div class="sub">${man ? 'Bahan yang dilaporkan habis — jadikan daftar belanja.' : 'Ketuk barang yang habis. Ketuk lagi untuk "tinggal sedikit", sekali lagi untuk menghapus. Bisa ketuk banyak sekaligus, tersimpan otomatis.'}</div><div id="hv"><div class="muted">Memuat…</div></div>`;
+  updHabisInfo();
+  let h = null;
+  const tempel = d => { const x = JSON.parse(JSON.stringify(d)); HQ.pending.forEach(p => habisLokal(x, p.barang, p.status)); return x; };
   const st = n => (h.aktif.find(a => a.barang.toLowerCase() === n.toLowerCase()) || {}).status || '';
-  const lapor = async (barang, status) => { try { h = await api('habis.lapor', { barang, status, oleh: S.nama }); } catch (e) { return; } S.habisN = h.aktif.length; updHabisBadge(); draw(); vib(10); };
+  const lapor = (barang, status) => {
+    if (S.latihan) return toast('Mode latihan: laporan barang habis tidak disimpan.', true);
+    habisLokal(h, barang, status); S.habisN = h.aktif.length; updHabisBadge(); vib(10);
+    antreHabis(barang, status); draw();
+  };
   const draw = () => {
+    if (!$('#hv') || !h) return;
     const extra = h.aktif.filter(a => !h.master.some(m => m.toLowerCase() === a.barang.toLowerCase()));
     const sel = new Set();
+    const nilai = $('#hn') ? $('#hn').value : '';
     $('#hv').innerHTML = `${man ? `<div class="card gold"><div class="between"><div><div class="money" style="font-size:22px">${h.aktif.length} barang</div><div class="muted">${h.aktif.filter(a => a.status === 'Habis').length} habis · ${h.aktif.filter(a => a.status === 'Sedikit').length} tinggal sedikit</div></div>
         <button class="btn pri sm" id="hwa">${ico('wa', 16)} Kirim ke WA</button></div></div>
-       <div class="card list" id="hl">${h.aktif.map(a => `<label class="li" style="margin:0;cursor:pointer;font-size:14px;color:var(--ink);font-weight:500"><span class="row" style="gap:10px;flex:1"><input type="checkbox" data-id="${a.id}" style="width:20px;height:20px;flex:0 0 20px"><span><b>${esc(a.barang)}</b><div class="muted">${esc(a.oleh)} · ${esc(a.waktu.slice(11))}${a.waktu.slice(0, 10) !== today() ? ' · ' + tglID(a.waktu) : ''}</div></span></span><span class="badge ${a.status === 'Habis' ? 'bad' : 'warn'}">${a.status === 'Habis' ? 'Habis' : 'Sedikit'}</span></label>`).join('') || '<div class="muted">Tidak ada barang habis. 👍</div>'}</div>
+       <div class="card list" id="hl">${h.aktif.map(a => `<label class="li" style="margin:0;cursor:pointer;font-size:14px;color:var(--ink);font-weight:500"><span class="row" style="gap:10px;flex:1"><input type="checkbox" data-id="${a.id}" style="width:20px;height:20px;flex:0 0 20px" ${String(a.id).startsWith('tmp') ? 'disabled' : ''}><span><b>${esc(a.barang)}</b><div class="muted">${esc(a.oleh)} · ${esc(String(a.waktu).slice(11))}${String(a.waktu).slice(0, 10) !== today() ? ' · ' + tglID(a.waktu) : ''}</div></span></span><span class="badge ${a.status === 'Habis' ? 'bad' : 'warn'}">${a.status === 'Habis' ? 'Habis' : 'Sedikit'}</span></label>`).join('') || '<div class="muted">Tidak ada barang habis. 👍</div>'}</div>
        ${h.aktif.length ? '<button class="btn dark block" id="hbeli">Tandai yang dicentang sudah dibeli</button>' : ''}
        <h3>Lapor dari sini</h3>` : ''}
      <div class="hgrid">${h.master.concat(extra.map(e => e.barang)).map(n => { const s = st(n); return `<div class="hb ${s}" data-n="${esc(n)}">${esc(n)}<small>${s === 'Habis' ? 'HABIS' : s === 'Sedikit' ? 'Tinggal sedikit' : '&nbsp;'}</small></div>`; }).join('')}</div>
-     <div class="card" style="margin-top:12px"><label style="margin-top:0">Barang lain</label><input id="hn" placeholder="mis. Sabun cuci piring">
+     <div class="card" style="margin-top:12px"><label style="margin-top:0">Barang lain</label><input id="hn" placeholder="mis. Sabun cuci piring" value="${esc(nilai)}">
       <div class="row" style="margin-top:8px"><button class="btn red" id="hh">Habis</button><button class="btn" id="hs" style="color:var(--warn)">Tinggal sedikit</button></div></div>
      ${man ? '<button class="btn block" id="hmaster">Kelola daftar barang</button>' : ''}`;
     $$('.hb').forEach(b => b.onclick = () => { const s = st(b.dataset.n); lapor(b.dataset.n, s === '' ? 'Habis' : s === 'Habis' ? 'Sedikit' : 'hapus'); });
-    $('#hh').onclick = () => { const v = $('#hn').value.trim(); if (v) lapor(v, 'Habis'); };
-    $('#hs').onclick = () => { const v = $('#hn').value.trim(); if (v) lapor(v, 'Sedikit'); };
+    $('#hh').onclick = () => { const v = $('#hn').value.trim(); if (v) { $('#hn').value = ''; lapor(v, 'Habis'); } };
+    $('#hs').onclick = () => { const v = $('#hn').value.trim(); if (v) { $('#hn').value = ''; lapor(v, 'Sedikit'); } };
     if (!man) return;
     $$('#hl input').forEach(c => c.onchange = () => c.checked ? sel.add(c.dataset.id) : sel.delete(c.dataset.id));
-    const hb = $('#hbeli'); if (hb) hb.onclick = async () => { if (!sel.size) return toast('Centang barang yang sudah dibeli.', true); try { h = await api('habis.beli', { ids: [...sel] }); } catch (e) { return; } S.habisN = h.aktif.length; updHabisBadge(); toast('Ditandai sudah dibeli ✓'); draw(); };
+    const hb = $('#hbeli'); if (hb) hb.onclick = async () => {
+      if (!sel.size) return toast('Centang barang yang sudah dibeli.', true);
+      await kirimHabis();
+      let r; try { r = await api('habis.beli', { ids: [...sel] }); } catch (e) { return; }
+      h = tempel(r); S.habisData = r; store.set('habisCache', r); S.habisN = h.aktif.length; updHabisBadge(); toast('Ditandai sudah dibeli ✓'); draw();
+    };
     $('#hwa').onclick = () => shareWA(`*Daftar Belanja ${S.warung}*\n${tglID(today(), true)}\n\n*Habis:*\n${h.aktif.filter(a => a.status === 'Habis').map(a => '☐ ' + a.barang).join('\n') || '-'}\n\n*Tinggal sedikit:*\n${h.aktif.filter(a => a.status === 'Sedikit').map(a => '☐ ' + a.barang).join('\n') || '-'}`);
     $('#hmaster').onclick = () => {
       const m = modal(`<h3>Daftar barang</h3><div class="muted">Satu barang per baris. Urutan di sini = urutan tampil di tablet.</div><textarea id="hm" rows="14" style="margin-top:10px">${esc(h.master.join('\n'))}</textarea><button class="btn pri block" id="hms" style="margin-top:12px">Simpan</button>`);
-      m.querySelector('#hms').onclick = async () => { try { h = await api('habis.master', { list: m.querySelector('#hm').value.split('\n') }); } catch (e) { return; } m.remove(); toast('Daftar barang tersimpan ✓'); draw(); };
+      m.querySelector('#hms').onclick = async () => { let r; try { r = await api('habis.master', { list: m.querySelector('#hm').value.split('\n') }); } catch (e) { return; } h = tempel(r); m.remove(); toast('Daftar barang tersimpan ✓'); draw(); };
     };
   };
-  draw();
+  S.habisDraw = d => { if (!$('#hv')) { S.habisDraw = null; return; } h = tempel(d); draw(); };
+  // tampilkan dulu dari simpanan perangkat (instan), lalu segarkan dari server di belakang layar
+  const simpan = S.habisData || store.get('habisCache', null);
+  if (simpan) { h = tempel(simpan); draw(); }
+  try {
+    const d = await api('habis.data', {}, { silent: true, quiet: !!simpan });
+    S.habisData = d; store.set('habisCache', d);
+    if (!HQ.kirim && $('#hv')) { h = tempel(d); S.habisN = h.aktif.length; updHabisBadge(); draw(); }
+  } catch (e) { if (!simpan) $('#hv').innerHTML = '<div class="warnbox">Gagal memuat. Periksa koneksi lalu buka lagi.</div>'; }
 }
 
 /* ===================== UANG KELUAR (laci) ===================== */

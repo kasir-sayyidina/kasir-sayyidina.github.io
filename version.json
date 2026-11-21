@@ -1,8 +1,7 @@
 {
-  "version": "3.1.0",
+  "version": "3.1.1",
   "tanggal": "2026-11-22",
   "catatan": [
-    "Catat AI lebih cepat: catatan WA rapi langsung terbaca, AI otomatis pindah model bila server sibuk",
-    "Periode tanggal bebas & periode gajian (mis. tgl 25–24) di Laporan, Buku Belanja, Bagi Hasil"
+    "Daftar Habis: ketukan langsung tampil, tersimpan otomatis di belakang layar (bisa ketuk banyak sekaligus)"
   ]
 }
