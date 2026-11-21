@@ -221,8 +221,8 @@ td.r,th.r{text-align:right}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '2.3.1';      // versi tampilan — naikkan bersama version.json setiap update
-const BACKEND_MINIMAL = '2.3.1';  // versi Code.gs minimal yang dibutuhkan
+const APP_VERSION = '2.4.0';      // versi tampilan — naikkan bersama version.json setiap update
+const BACKEND_MINIMAL = '2.4.0';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
 const $ = s => document.querySelector(s);
@@ -488,24 +488,25 @@ async function doLogin(pin) {
   S.role = d.role; S.warung = d.warung; S.menu = d.menu; S.pegawai = d.pegawai; S.perangkat = d.perangkat;
   S.notaServer = { tgl: d.tanggalServer || today(), n: d.notaTerakhir || 0 };
   store.set('pin', pin);
-  const sah = store.get('namaTgl') === today() && S.nama && S.nama.split(' & ').every(n => S.pegawai.some(p => p.nama === n && (S.role === 'manajer') === (p.peran === 'Manajer')));
-  if (!sah) await pilihPetugas();
+  S.shifts = d.shifts || [];
+  const sah = store.get('namaTgl') === today() && (S.role === 'manajer' || !shiftKini() || store.get('shiftKey') === kunciShift()) && S.nama && S.nama.split(' & ').every(n => S.pegawai.some(p => p.nama === n && (S.role === 'manajer') === (p.peran === 'Manajer')));
+  if (!sah) await pilihPetugas(S.role === 'pegawai' && shiftKini() ? shiftKini().nama : '');
   shell(); go(S.tab = 'kasir'); flush();
-  S.versiBackend = d.versi || ''; S.qris = d.qris || ''; S.terlaris = d.terlaris || {}; S.osApp = d.onesignalAppId || '';
+  S.versiBackend = d.versi || ''; S.shifts = d.shifts || []; S.qris = d.qris || ''; S.terlaris = d.terlaris || {}; S.osApp = d.onesignalAppId || '';
   if (S.role === 'manajer' && S.osApp && store.get('notif')) notifSiap().catch(() => {});
   pemeriksaanAwal(d);
   api('habis.data', {}, { silent: true, quiet: true }).then(h => { S.habisN = h.aktif.length; updHabisBadge(); }).catch(() => {});
 }
-function pilihPetugas() {
+function pilihPetugas(shiftNama) {
   return new Promise(res => {
     const manajer = S.role === 'manajer';
     const list = S.pegawai.filter(p => manajer ? p.peran === 'Manajer' : p.peran !== 'Manajer');
     if (!list.length) { S.nama = manajer ? 'Manajer' : 'Kasir'; store.set('nama', S.nama); return res(); }
-    const pilih = new Set((S.nama || '').split(' & ').filter(n => list.some(p => p.nama === n)));
-    const m = modal(`<h3>${manajer ? 'Masuk sebagai' : 'Siapa yang jaga?'}</h3><div class="muted" style="margin-bottom:12px">${manajer ? 'Pilih nama Anda.' : 'Centang semua pegawai yang bertugas sekarang (boleh lebih dari satu).'}</div>
+    const pilih = new Set(shiftNama ? [] : (S.nama || '').split(' & ').filter(n => list.some(p => p.nama === n)));
+    const m = modal(`<h3>${manajer ? 'Masuk sebagai' : shiftNama ? 'Siapa yang jaga shift ' + esc(shiftNama) + '?' : 'Siapa yang jaga?'}</h3><div class="muted" style="margin-bottom:12px">${manajer ? 'Pilih nama Anda.' : (shiftNama ? 'Shift ' + esc(shiftNama) + ' sudah dimulai. ' : '') + 'Centang semua pegawai yang bertugas sekarang (boleh lebih dari satu).'}</div>
       <div class="hgrid">${list.map(p => `<div class="hb ${pilih.has(p.nama) ? 'Sedikit' : ''}" data-n="${esc(p.nama)}">${esc(p.nama)}</div>`).join('')}</div>
       ${manajer ? '' : '<button class="btn pri block" id="pm" style="margin-top:16px">Mulai</button>'}`, null, { lock: true });
-    const done = () => { if (!pilih.size) return toast('Pilih minimal satu nama.', true); S.nama = [...pilih].join(' & '); store.set('nama', S.nama); store.set('namaTgl', today()); m.remove(); res(); };
+    const done = () => { if (!pilih.size) return toast('Pilih minimal satu nama.', true); S.nama = [...pilih].join(' & '); store.set('nama', S.nama); store.set('namaTgl', today()); store.set('shiftKey', kunciShift()); m.remove(); res(); };
     m.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
       const n = b.dataset.n;
       if (manajer) { pilih.clear(); pilih.add(n); return done(); }
@@ -621,6 +622,7 @@ function renderCheckout(box, modalEl) {
     if (modalEl) modalEl.remove();
     S.cart = {}; CK = { metode: 'Tunai', diterima: '' }; drawGrid(); drawCart(); vib([15, 40, 25]);
     sukses(nota);
+    setTimeout(cekGantiShift, 500);
   };
 }
 function strukText(n) {
@@ -860,6 +862,10 @@ async function vLaporan() {
    <div class="muted" style="margin:8px 2px">*Belum termasuk pemakaian kemasan (dihitung saat Bagi Hasil). Pembelian kemasan periode ini: ${rp(k['Stok Kemasan'])}.</div>
    <h3>Jam ramai <small>${top && top.total ? 'puncak pukul ' + pad(top.jam) + '.00' : ''}</small></h3>
    <div class="card"><div class="bars">${jam.map(x => `<div class="b ${x === top && x.total ? 'top' : ''}" title="${pad(x.jam)}.00 · ${x.transaksi} trx · ${rp(x.total)}"><div style="height:${Math.round(x.total / mj * 100)}%"></div><span>${x.jam}</span></div>`).join('')}</div></div>
+   <h3>Per shift</h3><div class="card"><table><tr><th>Shift</th><th class="r">Trx</th><th class="r">Omzet</th></tr>
+    ${(d.perShift || []).map(x => { const sh = (S.shifts || []).find(y => y.nama === x.shift); const ptg = Object.entries(x.petugas).sort((a, b) => b[1] - a[1]);
+      return `<tr><td><b>${esc(x.shift)}</b>${sh ? `<div class="muted">${sh.mulai}–${sh.selesai}</div>` : ''}${ptg.length ? `<div class="muted">${ptg.slice(0, 6).map(p => esc(p[0]) + (d.mulai === d.selesai ? '' : ' (' + p[1] + ')')).join(', ')}</div>` : ''}</td><td class="r">${x.transaksi}</td><td class="r"><b>${rp(x.total)}</b></td></tr>`; }).join('')}</table>
+    ${d.mulai !== d.selesai ? '<div class="muted" style="margin-top:6px">Angka dalam kurung = jumlah nota yang dilayani.</div>' : ''}</div>
    ${d.perHari.length > 1 ? `<h3>Penjualan harian</h3><div class="card"><div class="bars">${d.perHari.map(x => `<div class="b" title="${x.tanggal}: ${rp(x.total)}"><div style="height:${Math.round(x.total / mx * 100)}%"></div><span>${+x.tanggal.slice(8)}</span></div>`).join('')}</div></div>` : ''}
    <h3>Menu terlaris</h3><div class="card list">${d.terlaris.map((x, i) => `<div class="li"><span><span class="serif" style="font-weight:700;color:var(--g3);font-size:18px;display:inline-block;width:24px">${i + 1}</span>${emoji(x.nama)} ${esc(x.nama)}</span><span><b>${x.qty}</b> <span class="muted">· ${rp(x.omzet)}</span></span></div>`).join('') || '<div class="muted">Belum ada.</div>'}</div>
    <h3>Perkiraan pemakaian kemasan</h3><div class="stat">${['Paper Box', 'Kertas Nasi', 'Cup'].map(n => tile(n, (kem[n] || 0) + ' pcs')).join('')}</div>
@@ -872,6 +878,7 @@ async function vLaporan() {
     <h2>Ringkasan</h2><table>${[['Penjualan', d.penjualan], ['  Tunai', d.tunai], ['  QRIS', d.qris], ['HPP bahan', k.HPP], ['Laba kotor (sebelum kemasan)', d.labaKotor], ['Operasional', k.Operasional], ['Laba operasional (sebelum kemasan)', d.labaOperasional], ['Pembelian kemasan', k['Stok Kemasan']], ['Aset', k.Aset], ['Prive', k.Prive], ['Bayar hutang', k['Bayar Hutang']], ['Sisa hutang ndalem', d.hutangNdalem.sisa], ['Total kas cadangan', d.kasCadangan]].map(r => `<tr><td>${r[0]}</td><td class="r">${rp(r[1])}</td></tr>`).join('')}<tr><td>Jumlah transaksi</td><td class="r">${d.jumlahTransaksi}</td></tr></table>
     <h2>Penjualan harian</h2><table><tr><th>Tanggal</th><th class="r">Penjualan</th></tr>${d.perHari.map(x => `<tr><td>${tglID(x.tanggal)}</td><td class="r">${rp(x.total)}</td></tr>`).join('')}</table>
     <h2>Menu terlaris</h2><table><tr><th>Menu</th><th class="r">Qty</th><th class="r">Omzet</th></tr>${d.terlaris.map(x => `<tr><td>${esc(x.nama)}</td><td class="r">${x.qty}</td><td class="r">${rp(x.omzet)}</td></tr>`).join('')}</table>
+    <h2>Per shift</h2><table><tr><th>Shift</th><th class="r">Transaksi</th><th class="r">Penjualan</th><th>Petugas</th></tr>${(d.perShift || []).map(x => `<tr><td>${esc(x.shift)}</td><td class="r">${x.transaksi}</td><td class="r">${rp(x.total)}</td><td>${Object.keys(x.petugas).map(esc).join(', ')}</td></tr>`).join('')}</table>
     <h2>Jam ramai</h2><table><tr><th>Jam</th><th class="r">Transaksi</th><th class="r">Penjualan</th></tr>${d.perJam.map(x => `<tr><td>${pad(x.jam)}.00</td><td class="r">${x.transaksi}</td><td class="r">${rp(x.total)}</td></tr>`).join('')}</table>`);
 }
 
@@ -894,7 +901,7 @@ async function muatHariIni() {
 async function segarkan() {
   if (!S.role || document.visibilityState === 'hidden') return;
   let st; try { st = await api('status', {}, { silent: true, quiet: true }); } catch (e) { return; }
-  S.habisN = st.habisN; updHabisBadge(); S.terlaris = st.terlaris || S.terlaris; S.qris = st.qris;
+  S.habisN = st.habisN; updHabisBadge(); S.terlaris = st.terlaris || S.terlaris; S.qris = st.qris; if (st.shifts) S.shifts = st.shifts;
   if (JSON.stringify(st.menu) !== JSON.stringify(S.menu)) {
     S.menu = st.menu;
     const c = store.get('cache'); if (c && c.d) { c.d.menu = S.menu; store.set('cache', c); }
@@ -954,6 +961,23 @@ async function vNotif() {
     try { await api('pengaturan.simpan', { notif: { habis: $('#n-habis').checked, kas: $('#n-kas').checked, pengingat: $('#n-ingat').checked, batasSelisih: num($('#n-batas').value), jamPengingat: $('#n-jam').value } }); } catch (e) { return; }
     toast('Pengaturan notifikasi tersimpan ✓');
   };
+}
+async function vShift() {
+  let p; try { p = await api('status', {}); } catch (e) { return; }
+  const list = (p.shifts || []).map(x => ({ ...x }));
+  const draw = () => {
+    $('#view').innerHTML = `<h2>Jam Shift</h2><div class="sub">Dipakai untuk mengingatkan pergantian petugas di tablet dan untuk laporan per shift.</div>
+     ${list.map((x, i) => `<div class="card grp"><div class="row" style="gap:8px"><input data-i="${i}" data-f="nama" value="${esc(x.nama)}" placeholder="Nama shift (mis. Siang)" style="font-weight:600"><button class="x" data-del="${i}" style="flex:0 0 40px;height:44px" title="Hapus">×</button></div>
+       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px"><div><label>Mulai</label><input type="time" data-i="${i}" data-f="mulai" value="${esc(x.mulai)}"></div><div><label>Selesai</label><input type="time" data-i="${i}" data-f="selesai" value="${esc(x.selesai)}"></div></div></div>`).join('')}
+     <button class="btn block" id="sa" style="margin-bottom:12px">+ Tambah shift</button>
+     <button class="btn dark block" id="ss">Simpan</button>
+     <div class="muted" style="margin-top:10px">Saat jam mulai shift tiba, tablet otomatis bertanya siapa yang jaga (ditunda bila pegawai sedang melayani). Penjualan di luar jam shift tetap tercatat, masuk kelompok "Di luar shift" di laporan.</div>${kembali}`;
+    $$('[data-f]').forEach(x => x.oninput = () => list[x.dataset.i][x.dataset.f] = x.value);
+    $$('[data-del]').forEach(b => b.onclick = () => { list.splice(b.dataset.del, 1); draw(); });
+    $('#sa').onclick = () => { list.push({ nama: '', mulai: '', selesai: '' }); draw(); };
+    $('#ss').onclick = async () => { let r; try { r = await api('shift.simpan', { list }); } catch (e) { return; } S.shifts = r; toast('Jam shift tersimpan ✓'); };
+  };
+  draw();
 }
 async function vPin() {
   $('#view').innerHTML = `<h2>Ganti PIN</h2><div class="sub">PIN pegawai dipakai di tablet kasir; PIN manajer untuk semua fitur.</div>
@@ -1085,11 +1109,11 @@ async function riwayatBagi() {
 /* ===================== LAINNYA ===================== */
 function vLain() {
   $('#view').innerHTML = `<h2>Lainnya</h2><div class="sub">Pengaturan & data warung.</div><div class="menu-l">
-   ${[['menu','menu','Kelola Menu & Gambar'],['habis','habis','Daftar Habis'],['pegawai','user','Pegawai & Manajer'],['kemasan','box','Kemasan (harga & stok)'],['perangkat','tablet','Perangkat Kasir (tablet)'],['absensi','clock','Sambungan Absensi'],['notif','clock','Notifikasi HP Manajer'],['pin','tutup','Ganti PIN'],['qris','box','Gambar QRIS'],['cadangan','cloud','Cadangan Data'],['arsip','hist','Arsip Tahunan'],['keluar','keluar','Uang Keluar Laci'],['tutup','tutup','Tutup Kas Harian'],['rkas','hist','Riwayat Tutup Kas'],['nama','swap','Ganti nama petugas'],['out','out','Keluar']].map(x => `<button class="btn block" data-l="${x[0]}">${ico(x[1])}&nbsp;${x[2]}</button>`).join('')}</div>
+   ${[['menu','menu','Kelola Menu & Gambar'],['habis','habis','Daftar Habis'],['pegawai','user','Pegawai & Manajer'],['kemasan','box','Kemasan (harga & stok)'],['perangkat','tablet','Perangkat Kasir (tablet)'],['absensi','clock','Sambungan Absensi'],['notif','clock','Notifikasi HP Manajer'],['pin','tutup','Ganti PIN'],['shift','clock','Jam Shift'],['qris','box','Gambar QRIS'],['cadangan','cloud','Cadangan Data'],['arsip','hist','Arsip Tahunan'],['keluar','keluar','Uang Keluar Laci'],['tutup','tutup','Tutup Kas Harian'],['rkas','hist','Riwayat Tutup Kas'],['nama','swap','Ganti nama petugas'],['out','out','Keluar']].map(x => `<button class="btn block" data-l="${x[0]}">${ico(x[1])}&nbsp;${x[2]}</button>`).join('')}</div>
    <div class="muted" style="text-align:center;margin-top:10px">Kasir Sayyidina v${APP_VERSION}${S.versiBackend ? ' · server v' + esc(S.versiBackend) : ''}<br>Perangkat ini: ${DEVICE}</div>
    <button class="btn block ghost" id="cekv" style="margin-top:6px">Cek pembaruan</button>`;
   $('#cekv').onclick = () => cekVersi(true);
-  $$('[data-l]').forEach(b => b.onclick = () => ({ menu: vMenu, habis: vHabis, pegawai: vPegawai, kemasan: vKemasan, perangkat: vPerangkat, absensi: vAbsensi, cadangan: vCadangan, notif: vNotif, pin: vPin, qris: vQris, arsip: vArsip, keluar: vKeluar, tutup: vTutup, rkas: vRiwayatKas, nama: async () => { await pilihPetugas(); shell(); go('lain'); }, out: () => logout() })[b.dataset.l]());
+  $$('[data-l]').forEach(b => b.onclick = () => ({ menu: vMenu, habis: vHabis, pegawai: vPegawai, kemasan: vKemasan, perangkat: vPerangkat, absensi: vAbsensi, cadangan: vCadangan, notif: vNotif, pin: vPin, shift: vShift, qris: vQris, arsip: vArsip, keluar: vKeluar, tutup: vTutup, rkas: vRiwayatKas, nama: async () => { await pilihPetugas(); shell(); go('lain'); }, out: () => logout() })[b.dataset.l]());
 }
 const kembali = '<button class="btn block" style="margin-top:10px" onclick="vLain()">← Kembali</button>';
 async function vMenu() {
@@ -1183,6 +1207,24 @@ async function vRiwayatKas() {
   $('#view').innerHTML = `<h2>Riwayat Tutup Kas</h2><div class="sub">60 hari terakhir.</div><div class="card list">${d.map(x => `<div class="li"><div><b>${tglID(x.tanggal)}</b><div class="muted">${esc(x.petugas)} · fisik ${rp(x.fisik)} · diambil ${rp(x.diambil)}${x.catatan ? ' · ' + esc(x.catatan) : ''}</div></div><span class="money" style="font-size:18px;color:${x.selisih < 0 ? 'var(--bad)' : x.selisih > 0 ? 'var(--ok)' : 'inherit'}">${x.selisih > 0 ? '+' : ''}${rp(x.selisih)}</span></div>`).join('') || '<div class="muted">Belum ada.</div>'}</div>${kembali}`;
 }
 
+/* ===================== shift ===================== */
+const mnt = t => { const m = String(t || '').match(/(\d{1,2})[:.](\d{2})/); return m ? +m[1] * 60 + +m[2] : null; };
+/** Shift yang sedang berjalan sekarang (hanya di dalam jam mulai–selesai), atau null. */
+function shiftKini() {
+  const d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+  return (S.shifts || []).find(x => mnt(x.mulai) <= m && m <= mnt(x.selesai)) || null;
+}
+const kunciShift = () => { const s = shiftKini(); return today() + (s ? '|' + s.nama : ''); };
+async function cekGantiShift() {
+  if (S.role !== 'pegawai' || $('.modal') || cartItems().length) return;
+  const sk = shiftKini();
+  const perlu = store.get('namaTgl') !== today() || (sk && store.get('shiftKey') !== kunciShift());
+  if (!perlu) return;
+  await pilihPetugas(sk ? sk.nama : '');
+  const pc = $('#petugas'); if (pc) pc.innerHTML = ico('user', 14) + ' ' + esc(S.nama);
+}
+setInterval(cekGantiShift, 30000);
+
 /* ===================== layar tetap menyala & ganti hari ===================== */
 let WL = null;
 async function jagaLayar(on) {
@@ -1194,9 +1236,7 @@ async function jagaLayar(on) {
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !S.role) return;
   if (S.tab === 'kasir') jagaLayar(true);
-  if (S.role === 'pegawai' && store.get('namaTgl') !== today() && !$('.modal')) {
-    await pilihPetugas(); const pc = $('#petugas'); if (pc) pc.innerHTML = ico('user', 14) + ' ' + esc(S.nama);
-  }
+  cekGantiShift();
 });
 
 /* ===================== versi & pemeriksaan ===================== */

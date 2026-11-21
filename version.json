@@ -1,10 +1,9 @@
 {
-  "version": "2.3.1",
+  "version": "2.4.0",
   "tanggal": "2026-11-21",
   "catatan": [
-    "Layar tablet tetap menyala saat kasir dibuka",
-    "Nama petugas ditanyakan ulang setiap hari baru",
-    "Ringkasan tunai/QRIS di riwayat, tombol hapus pencarian",
-    "Perbaikan nomor nota & uang keluar offline"
+    "Tablet otomatis bertanya siapa yang jaga saat shift berganti",
+    "Laporan per shift (siang, sore, malam) beserta petugasnya",
+    "Jam shift bisa diatur manajer"
   ]
 }
