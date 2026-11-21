@@ -1,9 +1,8 @@
 {
-  "version": "2.4.0",
+  "version": "3.0.0",
   "tanggal": "2026-11-21",
   "catatan": [
-    "Tablet otomatis bertanya siapa yang jaga saat shift berganti",
-    "Laporan per shift (siang, sore, malam) beserta petugasnya",
-    "Jam shift bisa diatur manajer"
+    "Kasir: item lain, diskon, ubah transaksi, pesanan & katering, mode latihan",
+    "Manajer: Buku Belanja, biaya rutin, hari libur, grafik tren, laba per menu, unduh Excel, pulihkan cadangan"
   ]
 }
