@@ -1,10 +1,9 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "tanggal": "2026-11-21",
   "catatan": [
-    "Menu, harga & status habis di tablet ikut berubah otomatis",
-    "Gambar QRIS di kasir, urutan menu terlaris",
-    "Ringkasan hari ini & perbandingan periode di Laporan",
-    "Notifikasi HP manajer, arsip tahunan"
+    "Jam pengingat & batas selisih bisa diatur langsung di aplikasi",
+    "Saklar nyala/mati per jenis notifikasi",
+    "Ganti PIN dari aplikasi"
   ]
 }

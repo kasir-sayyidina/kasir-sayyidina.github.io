@@ -221,8 +221,8 @@ td.r,th.r{text-align:right}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '2.2.0';      // versi tampilan — naikkan bersama version.json setiap update
-const BACKEND_MINIMAL = '2.2.0';  // versi Code.gs minimal yang dibutuhkan
+const APP_VERSION = '2.3.0';      // versi tampilan — naikkan bersama version.json setiap update
+const BACKEND_MINIMAL = '2.3.0';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
 const $ = s => document.querySelector(s);
@@ -918,19 +918,56 @@ function notifSiap() {
 }
 async function vNotif() {
   const izin = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+  let p; try { p = await api('pengaturan.get', {}); } catch (e) { return; }
+  const n = p.notif || {};
+  const sw = (id, on, judul, ket) => `<div class="between" style="padding:10px 0;border-bottom:1px solid #F3EADB"><div><b>${judul}</b><div class="muted">${ket}</div></div><label class="switch" style="margin:0"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label></div>`;
   $('#view').innerHTML = `<h2>Notifikasi</h2><div class="sub">Pemberitahuan ke HP manajer: barang habis, selisih kas besar, dan pengingat tutup kas.</div>
-   ${S.osApp ? '' : '<div class="warnbox"><b>Belum diatur.</b> Buat aplikasi OneSignal untuk kasir, lalu isi <b>ONESIGNAL_APP_ID</b> di tab Pengaturan dan kunci REST lewat menu Warung di Google Sheet (lihat panduan). Setelah itu keluar lalu masuk lagi.</div>'}
+   ${n.siap ? '' : '<div class="warnbox"><b>Belum tersambung.</b> Isi <b>ONESIGNAL_APP_ID</b> di tab Pengaturan dan kunci REST lewat menu Warung di Google Sheet (lihat panduan), lalu keluar dan masuk lagi.</div>'}
    <div class="card gold"><div class="between"><div><b>HP ini</b><div class="muted">${izin === 'granted' && store.get('notif') ? 'Notifikasi aktif ✓' : izin === 'denied' ? 'Diblokir di pengaturan browser' : izin === 'unsupported' ? 'Browser ini tidak mendukung notifikasi' : 'Belum aktif'}</div></div>${izin === 'granted' && store.get('notif') ? '<span class="badge ok">Aktif</span>' : ''}</div>
-    <button class="btn dark block" id="nak" style="margin-top:12px" ${S.osApp ? '' : 'disabled'}>Aktifkan notifikasi di HP ini</button>
-    <button class="btn block" id="ntes" style="margin-top:8px" ${S.osApp ? '' : 'disabled'}>Kirim notifikasi uji</button></div>
-   <div class="muted">Pengaturan jam pengingat (JAM_PENGINGAT) dan batas selisih (NOTIF_SELISIH) ada di tab Pengaturan Google Sheet. ${izin === 'denied' ? 'Untuk membuka blokir: ketuk ikon di sebelah alamat → Izin → Notifikasi → Izinkan.' : ''}</div>${kembali}`;
-  $('#nak').onclick = async () => {
+    ${izin === 'granted' && store.get('notif') ? '' : `<button class="btn dark block" id="nak" style="margin-top:12px" ${S.osApp ? '' : 'disabled'}>Aktifkan notifikasi di HP ini</button>`}
+    <button class="btn block" id="ntes" style="margin-top:8px" ${S.osApp ? '' : 'disabled'}>Kirim notifikasi uji</button>
+    ${izin === 'denied' ? '<div class="muted" style="margin-top:8px">Untuk membuka blokir: ketuk ikon di sebelah alamat → Izin → Notifikasi → Izinkan.</div>' : ''}</div>
+   <h3>Pengaturan <small>berlaku untuk semua HP manajer</small></h3>
+   <div class="card">
+    ${sw('n-habis', n.habis, 'Daftar habis', 'Ringkasan barang yang dilaporkan habis, paling cepat tiap 5 menit')}
+    ${sw('n-kas', n.kas, 'Selisih tutup kas', 'Dikirim saat tutup kas disimpan dengan selisih besar')}
+    <div class="row" style="margin:8px 0 6px"><div><label style="margin-top:0">Batas selisih (Rp)</label><input id="n-batas" inputmode="numeric" value="${n.batasSelisih}"></div></div>
+    <div class="chips">${[2000, 5000, 10000, 20000].map(v => `<div class="chip ${v === n.batasSelisih ? 'on' : ''}" data-bs="${v}">${rp(v)}</div>`).join('')}</div>
+    ${sw('n-ingat', n.pengingat, 'Pengingat tutup kas', 'Sekali sehari bila sudah ada penjualan tapi tutup kas belum diisi')}
+    <div class="row" style="margin-top:8px"><div><label style="margin-top:0">Jam pengingat</label><input type="time" id="n-jam" value="${esc(n.jamPengingat || '22:45')}"></div></div>
+    <button class="btn dark block" id="nsv" style="margin-top:14px">Simpan pengaturan</button></div>${kembali}`;
+  $$('[data-bs]').forEach(c => c.onclick = () => { $('#n-batas').value = c.dataset.bs; $$('[data-bs]').forEach(x => x.classList.toggle('on', x === c)); });
+  const nak = $('#nak'); if (nak) nak.onclick = async () => {
     loading(true);
     try { const OS = await notifSiap(); await OS.Notifications.requestPermission(); OS.User.addTag('peran', 'manajer'); store.set('notif', Notification.permission === 'granted'); toast(Notification.permission === 'granted' ? 'Notifikasi aktif ✓' : 'Izin notifikasi ditolak.', Notification.permission !== 'granted'); }
     catch (e) { toast(String(e.message || e), true); } finally { loading(false); }
     vNotif();
   };
   $('#ntes').onclick = async () => { try { await api('notif.tes', {}); toast('Terkirim — cek notifikasi HP dalam beberapa detik.'); } catch (e) {} };
+  $('#nsv').onclick = async () => {
+    if (!$('#n-jam').value) return toast('Isi jam pengingat.', true);
+    try { await api('pengaturan.simpan', { notif: { habis: $('#n-habis').checked, kas: $('#n-kas').checked, pengingat: $('#n-ingat').checked, batasSelisih: num($('#n-batas').value), jamPengingat: $('#n-jam').value } }); } catch (e) { return; }
+    toast('Pengaturan notifikasi tersimpan ✓');
+  };
+}
+async function vPin() {
+  $('#view').innerHTML = `<h2>Ganti PIN</h2><div class="sub">PIN pegawai dipakai di tablet kasir; PIN manajer untuk semua fitur.</div>
+   <div class="card"><b>PIN pegawai</b><div class="muted">4–8 angka. Setelah diganti, tablet akan meminta PIN baru.</div>
+    <input id="pp" inputmode="numeric" type="password" placeholder="PIN baru" style="margin-top:10px"><input id="pp2" inputmode="numeric" type="password" placeholder="Ulangi PIN baru" style="margin-top:8px">
+    <button class="btn dark block" id="pps" style="margin-top:10px">Simpan PIN pegawai</button></div>
+   <div class="card"><b>PIN manajer</b><div class="muted">6–8 angka. Berlaku untuk semua manajer — beri tahu manajer lain setelah diganti.</div>
+    <input id="pm1" inputmode="numeric" type="password" placeholder="PIN baru" style="margin-top:10px"><input id="pm2" inputmode="numeric" type="password" placeholder="Ulangi PIN baru" style="margin-top:8px">
+    <button class="btn dark block" id="pms" style="margin-top:10px">Simpan PIN manajer</button></div>
+   <div class="muted">Hindari angka berurutan (123456) atau sama semua (111111), juga tanggal lahir.</div>${kembali}`;
+  const simpan = async (jenis, a, b) => {
+    if (!a || a !== b) return toast('PIN baru dan ulangannya tidak sama.', true);
+    if (!await konfirmasi('Ganti PIN ' + jenis + '?', jenis === 'manajer' ? 'Anda akan memakai PIN baru mulai sekarang.' : 'Pegawai harus memakai PIN baru di tablet.', 'Ganti')) return;
+    try { await api('pin.ganti', { jenis, baru: a }); } catch (e) { return; }
+    if (jenis === 'manajer') { S.pin = a; store.set('pin', a); const c = store.get('cache'); if (c) { c.pin = a; store.set('cache', c); } }
+    toast('PIN ' + jenis + ' diganti ✓'); vPin();
+  };
+  $('#pps').onclick = () => simpan('pegawai', $('#pp').value.trim(), $('#pp2').value.trim());
+  $('#pms').onclick = () => simpan('manajer', $('#pm1').value.trim(), $('#pm2').value.trim());
 }
 async function vQris() {
   $('#view').innerHTML = `<h2>Gambar QRIS</h2><div class="sub">Tampil besar di kasir saat pembeli memilih QRIS, supaya bisa langsung dipindai dari tablet.</div>
@@ -1043,11 +1080,11 @@ async function riwayatBagi() {
 /* ===================== LAINNYA ===================== */
 function vLain() {
   $('#view').innerHTML = `<h2>Lainnya</h2><div class="sub">Pengaturan & data warung.</div><div class="menu-l">
-   ${[['menu','menu','Kelola Menu & Gambar'],['habis','habis','Daftar Habis'],['pegawai','user','Pegawai & Manajer'],['kemasan','box','Kemasan (harga & stok)'],['perangkat','tablet','Perangkat Kasir (tablet)'],['absensi','clock','Sambungan Absensi'],['notif','clock','Notifikasi HP Manajer'],['qris','box','Gambar QRIS'],['cadangan','cloud','Cadangan Data'],['arsip','hist','Arsip Tahunan'],['keluar','keluar','Uang Keluar Laci'],['tutup','tutup','Tutup Kas Harian'],['rkas','hist','Riwayat Tutup Kas'],['nama','swap','Ganti nama petugas'],['out','out','Keluar']].map(x => `<button class="btn block" data-l="${x[0]}">${ico(x[1])}&nbsp;${x[2]}</button>`).join('')}</div>
+   ${[['menu','menu','Kelola Menu & Gambar'],['habis','habis','Daftar Habis'],['pegawai','user','Pegawai & Manajer'],['kemasan','box','Kemasan (harga & stok)'],['perangkat','tablet','Perangkat Kasir (tablet)'],['absensi','clock','Sambungan Absensi'],['notif','clock','Notifikasi HP Manajer'],['pin','tutup','Ganti PIN'],['qris','box','Gambar QRIS'],['cadangan','cloud','Cadangan Data'],['arsip','hist','Arsip Tahunan'],['keluar','keluar','Uang Keluar Laci'],['tutup','tutup','Tutup Kas Harian'],['rkas','hist','Riwayat Tutup Kas'],['nama','swap','Ganti nama petugas'],['out','out','Keluar']].map(x => `<button class="btn block" data-l="${x[0]}">${ico(x[1])}&nbsp;${x[2]}</button>`).join('')}</div>
    <div class="muted" style="text-align:center;margin-top:10px">Kasir Sayyidina v${APP_VERSION}${S.versiBackend ? ' · server v' + esc(S.versiBackend) : ''}<br>Perangkat ini: ${DEVICE}</div>
    <button class="btn block ghost" id="cekv" style="margin-top:6px">Cek pembaruan</button>`;
   $('#cekv').onclick = () => cekVersi(true);
-  $$('[data-l]').forEach(b => b.onclick = () => ({ menu: vMenu, habis: vHabis, pegawai: vPegawai, kemasan: vKemasan, perangkat: vPerangkat, absensi: vAbsensi, cadangan: vCadangan, notif: vNotif, qris: vQris, arsip: vArsip, keluar: vKeluar, tutup: vTutup, rkas: vRiwayatKas, nama: async () => { await pilihPetugas(); shell(); go('lain'); }, out: () => logout() })[b.dataset.l]());
+  $$('[data-l]').forEach(b => b.onclick = () => ({ menu: vMenu, habis: vHabis, pegawai: vPegawai, kemasan: vKemasan, perangkat: vPerangkat, absensi: vAbsensi, cadangan: vCadangan, notif: vNotif, pin: vPin, qris: vQris, arsip: vArsip, keluar: vKeluar, tutup: vTutup, rkas: vRiwayatKas, nama: async () => { await pilihPetugas(); shell(); go('lain'); }, out: () => logout() })[b.dataset.l]());
 }
 const kembali = '<button class="btn block" style="margin-top:10px" onclick="vLain()">← Kembali</button>';
 async function vMenu() {
@@ -1151,7 +1188,7 @@ function pemeriksaanAwal(d) {
   }
   if (S.role === 'manajer') {
     if (vNum(d.versi) < vNum(BACKEND_MINIMAL)) masalah.push(`<b>Code.gs di Apps Script masih versi lama</b> (${esc(d.versi || '2.0')}). Tempel Code.gs terbaru lalu Terapkan → Kelola penerapan → Versi baru.`);
-    if (d.pinBawaan) masalah.push('<b>PIN masih bawaan</b> (1234 / 987654). Ganti di Google Sheet tab Pengaturan supaya aman.');
+    if (d.pinBawaan) masalah.push('<b>PIN masih bawaan</b> (1234 / 987654). Ganti lewat Lainnya → Ganti PIN supaya aman.');
     if (d.perangkat && !d.perangkat.jumlah) masalah.push('<b>Tablet kasir belum didaftarkan.</b> Buka aplikasi di tablet → Lainnya → Perangkat Kasir.');
   }
   if (masalah.length) modal(`<h3>Perlu perhatian</h3>${masalah.map(m => `<div class="warnbox">${m}</div>`).join('')}<button class="btn pri block" onclick="this.closest('.modal').remove()">Mengerti</button>`);
