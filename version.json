@@ -1,7 +1,8 @@
 {
-  "version": "3.1.1",
-  "tanggal": "2026-11-22",
+  "version": "3.2.0",
+  "tanggal": "2026-11-23",
   "catatan": [
-    "Daftar Habis: ketukan langsung tampil, tersimpan otomatis di belakang layar (bisa ketuk banyak sekaligus)"
+    "Kasir: tahan pesanan, nama/no. antrean (opsional), urungkan 5 detik, cari & kirim ulang nota 30 hari",
+    "Daftar Habis bisa dikirim ke grup WA (barang baru ditandai 🆕); ringkasan tutup kas langsung ditawarkan ke WA"
   ]
 }
