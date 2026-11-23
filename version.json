@@ -1,8 +1,8 @@
 {
-  "version": "3.2.0",
+  "version": "3.3.0",
   "tanggal": "2026-11-23",
   "catatan": [
-    "Kasir: tahan pesanan, nama/no. antrean (opsional), urungkan 5 detik, cari & kirim ulang nota 30 hari",
-    "Daftar Habis bisa dikirim ke grup WA (barang baru ditandai 🆕); ringkasan tutup kas langsung ditawarkan ke WA"
+    "Manajer: Saldo Kas (Laci, Kas Warung, Rekening), Laba Rugi lengkap dengan bagi hasil, rasio biaya, pengawasan per petugas",
+    "Satu halaman Pengaturan dengan saklar fitur & izin pegawai; tutup kas kini mengisi modal kembalian; bagi hasil & tagihan bisa ditandai dibayar"
   ]
 }
