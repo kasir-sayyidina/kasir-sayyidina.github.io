@@ -248,7 +248,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:#FFFAF0}
    ========================================================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz6wd6gozLqPGeQ-6zmAtm-QaqWVVteYjbn-V0D16buIzEC16TXgncYFzQBl9R5MFE63w/exec';
 
-const APP_VERSION = '3.3.0';      // versi tampilan — naikkan bersama version.json setiap update
+const APP_VERSION = '3.3.1';      // versi tampilan — naikkan bersama version.json setiap update
 const BACKEND_MINIMAL = '3.3.0';  // versi Code.gs minimal yang dibutuhkan
 
 /* ===================== util ===================== */
@@ -1315,11 +1315,32 @@ function kategoriDari(nama) {
   const hit = KATA_KAT.find(([w]) => n.indexOf(' ' + w + ' ') >= 0 || (w.length >= 5 && n.indexOf(w) >= 0));
   return hit ? hit[1] : null;
 }
+/** Hasil ketik suara biasanya satu baris panjang: "Melon 21.000 alpukat 31 ribu jambu 12.000".
+ *  Pecah setelah setiap angka harga (≥1000, atau ber-rb/ribu/k/jt, atau ber-Rp) yang diikuti huruf — bukan satuan seperti "3 kilo". */
+const SATUAN_RE = /^(kg|kilo|kilogram|gr|gram|g|ons|ltr|liter|l|ml|pcs|pc|pak|pack|bks|bungkus|tabung|ikat|biji|buah|butir|sak|karung|dus|box|botol|btl|galon|bal|lusin|rim|roll|rol|renteng|sachet|papan|kotak|potong|ptg|ekor|kantong|kaleng|pouch|jerigen|toples|blok|lembar|lbr|isi|slop|setengah|seperempat)\b/i;
+function pecahBaris(raw) {
+  let l = String(raw).replace(/\brupiah\b/gi, '').replace(/\s{2,}/g, ' ');
+  l = l.replace(/[,;]\s+(?=[a-z])/gi, '\n');                       // "ayam 50.000, tahu 10.000"
+  const out = [];
+  l.split('\n').forEach(seg => {
+    const re = /(rp\.?\s*)?(\d[\d.,]*)\s*(rb|ribu|k|jt|juta)?\b/gi; let m, awal = 0;
+    while ((m = re.exec(seg))) {
+      const akhir = m.index + m[0].length, sisa = seg.slice(akhir).trim();
+      const v = angkaRp(m[2], m[3]);
+      const harga = m[1] || m[3] || v >= 1000;
+      if (harga && /^[a-z]/i.test(sisa) && !SATUAN_RE.test(sisa) && !/^(pinjam|ndalem|dalem)\b/i.test(sisa)) {
+        out.push(seg.slice(awal, akhir)); awal = akhir;
+      }
+    }
+    out.push(seg.slice(awal));
+  });
+  return out.map(x => x.trim()).filter(Boolean);
+}
 /** Baca catatan WA berformat "- Barang 12.000" + "*Total ...*". Hasil: { kelompok, lengkap } — lengkap = semua baris yakin. */
 function bacaCepat(teks) {
   const grup = []; let g = null, tglAkhir = today(), lengkap = true, baris = 0;
   const baru = () => { g = { tanggal: tglAkhir, sumber_dana: 'Kas Warung', total_tertulis: null, items: [] }; grup.push(g); };
-  String(teks || '').split(/\r?\n/).forEach(raw => {
+  String(teks || '').split(/\r?\n/).flatMap(pecahBaris).forEach(raw => {
     const l = raw.replace(/[*_~`]/g, '').trim();
     if (!l) return;
     const tgl = tanggalDari(l, today());
@@ -1339,12 +1360,13 @@ function bacaCepat(teks) {
     const m = l.match(/^(?:[-•·▪>]|\d+[.)])?\s*(.+?)\s*[:=]?\s*(?:rp\.?\s*)?(\d[\d.,]*)\s*(rb|ribu|k|jt|juta)?\s*(?:\((?:pinjam\s*)?n?dalem\))?\s*$/i);
     if (!m) { if (/ndalem|dalem/i.test(l) && g) g.sumber_dana = 'Pinjam Ndalem'; else if (/[a-z]/i.test(l) && /\d/.test(l)) lengkap = false; return; }
     if (!g) baru();
-    let nama = m[1].replace(/[:=\-–]+\s*$/, '').trim(), nominal = angkaRp(m[2], m[3]), yakin = true;
+    let nama = m[1].replace(/[:=\-–]+\s*$/, '').replace(/^(beli|belanja|bayar|tambah|terus|lalu|dan)\s+/i, '').trim(), nominal = angkaRp(m[2], m[3]), yakin = true;
     if (!m[3] && nominal > 0 && nominal < 1000) { nominal *= 1000; yakin = false; }    // "Ayam 152" → kemungkinan ribuan
-    const jm = nama.match(/(\d+[.,]?\d*\s*(?:kg|kilo|gr|gram|g|ons|ltr|liter|l|ml|pcs|pc|pak|pack|bks|bungkus|tabung|ikat|biji|buah|butir|sak|karung|dus|box|botol|btl|galon|bal|lusin|rim|roll|rol|renteng|sachet|papan|kotak|potong|ptg|ekor|kantong|kaleng|pouch|jerigen|toples|blok|lembar|lbr)\b(?:\s*isi\s*\d+)?)/i);
+    const jm = nama.match(/((?:\d+[.,]?\d*|setengah|seperempat)\s*(?:kg|kilo|gr|gram|g|ons|ltr|liter|l|ml|pcs|pc|pak|pack|bks|bungkus|tabung|ikat|biji|buah|butir|sak|karung|dus|box|botol|btl|galon|bal|lusin|rim|roll|rol|renteng|sachet|papan|kotak|potong|ptg|ekor|kantong|kaleng|pouch|jerigen|toples|blok|lembar|lbr)\b(?:\s*isi\s*\d+)?)/i);
     const jumlah = jm ? jm[1] : '';
     if (jm) nama = nama.replace(jm[1], '').replace(/\s{2,}/g, ' ').replace(/[,(]\s*$/, '').trim();
     if (/ndalem|dalem/i.test(nama)) { g.sumber_dana = 'Pinjam Ndalem'; nama = nama.replace(/\(?\s*(pinjam\s*)?n?dalem\s*\)?/i, '').trim(); }
+    if (/(\d[\d.,]{3,}|\d+\s*(rb|ribu|jt|juta)\b)/i.test(nama)) yakin = false;   // nama masih memuat harga → serahkan ke AI
     let kategori = kategoriDari(nama + ' ' + jumlah);
     if (!kategori) { kategori = 'Lain-lain'; yakin = false; }
     const it = { item: nama.charAt(0).toUpperCase() + nama.slice(1), jumlah, nominal, kategori, jenis_kemasan: null, qty_kemasan: null, yakin };
